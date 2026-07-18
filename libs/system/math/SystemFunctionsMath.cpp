@@ -1,0 +1,40 @@
+#include "SystemFunctionsMath.h"
+#include <cmath>
+/**
+* Note: The tan expression in this math library will explode near дл/2.
+*/
+Value Math::sin(const std::vector<Value>& args) {
+	if (args.size() != 1) {
+		throw std::runtime_error("math: need 1 argument (x:number)");
+	}
+	const Value v = args[0];
+	if (v.getType() != Value::Type::Int && v.getType() != Value::Type::Double) {
+		throw std::runtime_error("math: The parameter must be a number (int or double)");
+	}
+	const double sin_res = std::sin(v.asDouble());
+	return Value(sin_res);
+}
+
+Value Math::cos(const std::vector<Value>& args) {
+	if (args.size() != 1) {
+		throw std::runtime_error("math: need 1 argument (x:number)");
+	}
+	const Value v = args[0];
+	if (v.getType() != Value::Type::Int && v.getType() != Value::Type::Double) {
+		throw std::runtime_error("math: The parameter must be a number (int or double)");
+	}
+	const double cos_res = std::cos(v.asDouble());
+	return Value(cos_res);
+}
+
+Value Math::tan(const std::vector<Value>& args) {
+	if (args.size() != 1) {
+		throw std::runtime_error("math: need 1 argument (x:number)");
+	}
+	const Value v = args[0];
+	if (v.getType() != Value::Type::Int && v.getType() != Value::Type::Double) {
+		throw std::runtime_error("math: The parameter must be a number (int or double)");
+	}
+	const double tan_res = std::tan(v.asDouble());
+	return Value(tan_res);
+}
