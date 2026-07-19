@@ -1,5 +1,6 @@
 #include "ast.hpp"
 #include "interpreter.hpp"
+#include "library_manager.hpp"
 #include <iostream>   
 #include <stdexcept> 
 
@@ -7,7 +8,7 @@ IdentifierExpr::IdentifierExpr(const std::string& n) : name(n) {}
 Value IdentifierExpr::evaluate(std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
     if (variables.find(name) == variables.end()) {
-        throw std::runtime_error("未定义的变量: " + name);
+        throw std::runtime_error("Undefined variable: " + name);
     }
     return variables[name];
 }
@@ -28,6 +29,34 @@ StringExpr::StringExpr(const std::string& v) : value(v) {}
 Value StringExpr::evaluate(std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
     return Value(value);
+}
+
+ArrayExpr::ArrayExpr(std::vector<std::unique_ptr<Expr>>&& elems) : elements(std::move(elems)) {}
+
+Value ArrayExpr::evaluate(std::unordered_map<std::string, Value>& variables,
+    std::unordered_map<std::string, Function>& functions) {
+    std::vector<Value> values;
+    for (const auto& elem : elements) {
+        values.push_back(elem->evaluate(variables, functions));
+    }
+    return Value(values);
+}
+
+IndexExpr::IndexExpr(std::unique_ptr<Expr> arr, std::unique_ptr<Expr> idx)
+    : arrayExpr(std::move(arr)), indexExpr(std::move(idx)) {}
+
+Value IndexExpr::evaluate(std::unordered_map<std::string, Value>& variables,
+    std::unordered_map<std::string, Function>& functions) {
+    Value arrValue = arrayExpr->evaluate(variables, functions);
+    if (arrValue.getType() != Value::Type::Array) {
+        throw std::runtime_error("Index target is not an array type");
+    }
+    int idx = indexExpr->evaluate(variables, functions).asInt();
+    const std::vector<Value>& arr = arrValue.asArray();
+    if (idx < 0 || idx >= static_cast<int>(arr.size())) {
+        throw std::runtime_error("Array index out of bounds: " + std::to_string(idx));
+    }
+    return arr[idx];
 }
 
 CallExpr::CallExpr(const std::string& name) : funcName(name) {}
@@ -62,16 +91,22 @@ Value CallExpr::evaluate(std::unordered_map<std::string, Value>& variables,
 
     // 否则按原有流程查找脚本函数
     if (functions.find(funcName) == functions.end()) {
-        throw std::runtime_error("未定义的函数: " + funcName);
+        auto& libMgr = LibraryManager::getInstance();
+        std::string libName = libMgr.getBlockedLibName(funcName);
+        if (!libName.empty()) {
+            throw std::runtime_error("Function '" + funcName + "' is from the '" + libName
+                + "' library. Use '" + libName + "." + funcName + "(...)' to call it.");
+        }
+        throw std::runtime_error("Undefined function: " + funcName);
     }
 
     const Function& func = functions[funcName];
 
     // 检查参数数量
     if (argVals.size() != func.parameters.size()) {
-        throw std::runtime_error("函数 " + funcName + " 期望 " +
-            std::to_string(func.parameters.size()) + " 个参数，实际 " +
-            std::to_string(argVals.size()) + " 个");
+        throw std::runtime_error("Function " + funcName + " expects " +
+            std::to_string(func.parameters.size()) + " arguments, got " +
+            std::to_string(argVals.size()));
     }
 
     // 创建局部作用域并绑定参数
@@ -102,7 +137,7 @@ Value BinaryExpr::evaluate(std::unordered_map<std::string, Value>& variables,
         switch (op) {
         case TOKEN_PLUS: result = leftVal.asInt() + rightVal.asInt(); break;
         case TOKEN_MINUS: result = leftVal.asInt() - rightVal.asInt(); break;
-        default: throw std::runtime_error("不支持的运算符");
+        default: throw std::runtime_error("Unsupported operator");
         }
         return Value(result);
     }
@@ -111,12 +146,12 @@ Value BinaryExpr::evaluate(std::unordered_map<std::string, Value>& variables,
         switch (op) {
         case TOKEN_PLUS: result = leftVal.asDouble() + rightVal.asDouble(); break;
         case TOKEN_MINUS: result = leftVal.asDouble() - rightVal.asDouble(); break;
-        default: throw std::runtime_error("不支持的运算符");
+        default: throw std::runtime_error("Unsupported operator");
         }
         return Value(result);
     }
     else {
-        throw std::runtime_error("运算错误：类型不匹配（仅支持int/double同类型运算）");
+        throw std::runtime_error("Operation error: type mismatch (only int/double of same type supported)");
     }
 }
 
@@ -130,29 +165,48 @@ Value InputExpr::evaluate(std::unordered_map<std::string, Value>& variables,
 Value CastExpr::evaluate(std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
     Value val = expr->evaluate(variables, functions);
-    if (val.getType() != Value::Type::String) {
-        throw std::runtime_error("类型转换错误：仅支持string类型转换为int/double");
-    }
-    std::string strVal = val.asString();
-
-    try {
+    switch (val.getType()) {
+    case Value::Type::Int:
         if (castType == CastType::Int) {
-            int intVal = std::stoi(strVal);
-            return Value(intVal);
+            return Value(val.asInt());
         }
         else if (castType == CastType::Double) {
-            double doubleVal = std::stod(strVal);
-            return Value(doubleVal);
+            return Value(static_cast<double>(val.asInt()));
         }
+        break;
+    case Value::Type::Double:
+        if (castType == CastType::Int) {
+            return Value(static_cast<int>(val.asDouble()));
+        }
+        else if (castType == CastType::Double) {
+            return Value(val.asDouble());
+        }
+        break;
+    case Value::Type::String: {
+        std::string strVal = val.asString();
+        try {
+            if (castType == CastType::Int) {
+                int intVal = std::stoi(strVal);
+                return Value(intVal);
+            }
+            else if (castType == CastType::Double) {
+                double doubleVal = std::stod(strVal);
+                return Value(doubleVal);
+            }
+        }
+        catch (const std::invalid_argument& e) {
+            throw std::runtime_error("Cast error: cannot convert \"" + strVal + "\" to numeric value");
+        }
+        catch (const std::out_of_range& e) {
+            throw std::runtime_error("Cast error: \"" + strVal + "\" out of numeric range");
+        }
+        break;
     }
-    catch (const std::invalid_argument& e) {
-        throw std::runtime_error("类型转换错误：无法将\"" + strVal + "\"转换为数值");
-    }
-    catch (const std::out_of_range& e) {
-        throw std::runtime_error("类型转换错误：\"" + strVal + "\"超出数值范围");
+    default:
+        break;
     }
 
-    return Value();
+    throw std::runtime_error("Cast error: unsupported source type for cast");
 }
 
 Value CompareExpr::evaluate(std::unordered_map<std::string, Value>& variables,
@@ -184,7 +238,7 @@ Value CompareExpr::evaluate(std::unordered_map<std::string, Value>& variables,
         }
     }
     else {
-        throw std::runtime_error("比较错误：仅支持int/double同类型比较");
+        throw std::runtime_error("Comparison error: only int/double of same type supported");
     }
 
     return Value(result ? 1 : 0);
@@ -206,6 +260,6 @@ Value ConditionExpr::evaluate(std::unordered_map<std::string, Value>& variables,
         return Value(rightVal.asBool() ? 1 : 0);
     }
     else {
-        throw std::runtime_error("不支持的条件运算符");
+        throw std::runtime_error("Unsupported condition operator");
     }
 }

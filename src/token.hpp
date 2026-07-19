@@ -41,13 +41,23 @@ enum TokenT {
     TOKEN_COMMA,       // ,
     TOKEN_WHILE,       // while
     TOKEN_END,         // end
-    TOKEN_EXIT,         // exit 
-    TOKEN_IMPORT        // import
+    TOKEN_EXIT,        // exit 
+    TOKEN_IMPORT,      // import
+    TOKEN_FOR,         // for
+    TOKEN_LBRACKET,    // [
+    TOKEN_RBRACKET,    // ]
+    TOKEN_SEMICOLON    // ;
 };
 
 // Token结构体
 struct Token {
     TokenT type;
     std::string value;
-    Token(TokenT t, const std::string& v) : type(t), value(v) {}
+    int line;
+    int col;
+    Token(TokenT t, const std::string& v, int l = 1, int c = 1)
+        : type(t), value(v), line(l), col(c) {}
+    std::string position() const {
+        return std::to_string(line) + ":" + std::to_string(col);
+    }
 };

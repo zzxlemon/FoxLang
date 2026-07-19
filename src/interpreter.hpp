@@ -12,8 +12,9 @@ class Interpreter {
 public:
     std::unordered_map<std::string, Value> variables;
     std::unordered_map<std::string, Function> functions;
+    bool parse_failed = false;
 
-    void parseCode(const std::string& code);
+    void parseCode(const std::string& code, const std::string& filename = "");
     Value execute(const std::string& line);
     Value executeFunction(const Function& func);
     void runMainFunc();

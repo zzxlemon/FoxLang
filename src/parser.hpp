@@ -18,6 +18,7 @@ private:
     static void eat(Lexer& lexer, Token& currentToken, TokenT expectedType);
     // 解析表达式
     static std::unique_ptr<Expr> parsePrimary(Lexer& lexer, Token& currentToken);
+    static std::unique_ptr<Expr> parsePostfix(Lexer& lexer, Token& currentToken, std::unique_ptr<Expr> expr);
     static std::unique_ptr<Expr> parseExpr(Lexer& lexer, Token& currentToken);
     static std::unique_ptr<Expr> parseAdd(Lexer& lexer, Token& currentToken); // 新增：处理 +/-
     // 解析赋值语句
@@ -57,6 +58,10 @@ private:
     static IfStatement parseIfStatement(Lexer& lexer, Token& currentToken);
 	// 解析while语句
     static WhileStatement parseWhileStatement(Lexer& lexer, Token& currentToken);
+    static ForStatement parseForStatement(Lexer& lexer, Token& currentToken);
+    static void executeForStatement(const ForStatement& forStmt,
+        std::unordered_map<std::string, Value>& variables,
+        std::unordered_map<std::string, Function>& functions);
     // 解析import语句
     static void parseImportStatement(Lexer& lexer, Token& currentToken,
         std::unordered_map<std::string, Value>& variables,

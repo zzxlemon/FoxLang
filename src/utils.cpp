@@ -2,6 +2,7 @@
 #include "token.hpp"
 #include "common.hpp"
 #include "lexer.hpp"   
+#include "error_reporter.hpp"
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -10,7 +11,7 @@
 std::string read_file(const std::string& filename) {
     std::ifstream inFile(filename, std::ios::binary);
     if (!inFile.is_open()) {
-        std::cerr << "无法打开文件：" << filename << std::endl;
+        ErrorReporter::reportSimple("FileError", "Cannot open file: " + filename);
         std::exit(1);
     }
     std::string fullCode((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
@@ -47,7 +48,7 @@ std::string xor_encrypt_decrypt_str_key(const std::string& input, const std::str
 void encrypt_file_with_key(const std::string& src_path, const std::string& dst_path, const std::string& key) {
     std::ifstream src_file(src_path, std::ios::binary);
     if (!src_file) {
-        std::cerr << "无法打开源文件：" << src_path << std::endl;
+        ErrorReporter::reportSimple("FileError", "Cannot open source file: " + src_path);
         return;
     }
     std::string content((std::istreambuf_iterator<char>(src_file)), std::istreambuf_iterator<char>());
@@ -57,7 +58,7 @@ void encrypt_file_with_key(const std::string& src_path, const std::string& dst_p
 
     std::ofstream dst_file(dst_path, std::ios::binary);
     if (!dst_file) {
-        std::cerr << "无法创建加密文件：" << dst_path << std::endl;
+        ErrorReporter::reportSimple("FileError", "Cannot create encrypted file: " + dst_path);
         return;
     }
     dst_file.write(encrypted.c_str(), encrypted.size());
@@ -69,7 +70,7 @@ void encrypt_file_with_key(const std::string& src_path, const std::string& dst_p
 std::string decrypt_file_with_key(const std::string& fz_path, const std::string& key) {
     std::ifstream fz_file(fz_path, std::ios::binary);
     if (!fz_file) {
-        std::cerr << "无法打开加密文件：" << fz_path << std::endl;
+        ErrorReporter::reportSimple("FileError", "Cannot open encrypted file: " + fz_path);
         return "";
     }
     std::string encrypted((std::istreambuf_iterator<char>(fz_file)), std::istreambuf_iterator<char>());
@@ -81,7 +82,7 @@ std::string decrypt_file_with_key(const std::string& fz_path, const std::string&
 void encrypt_file(const std::string& src_path, const std::string& dst_path, char key) {
     std::ifstream src_file(src_path, std::ios::binary);
     if (!src_file) {
-        std::cerr << "无法打开源文件：" << src_path << std::endl;
+        ErrorReporter::reportSimple("FileError", "Cannot open source file: " + src_path);
         return;
     }
     std::string content((std::istreambuf_iterator<char>(src_file)), std::istreambuf_iterator<char>());
@@ -89,7 +90,7 @@ void encrypt_file(const std::string& src_path, const std::string& dst_path, char
     std::string encrypted = xor_encrypt_decrypt(content, key);
     std::ofstream dst_file(dst_path, std::ios::binary);
     if (!dst_file) {
-        std::cerr << "无法创建加密文件：" << dst_path << std::endl;
+        ErrorReporter::reportSimple("FileError", "Cannot create encrypted file: " + dst_path);
         return;
     }
     dst_file.write(encrypted.c_str(), encrypted.size());
@@ -102,7 +103,7 @@ void encrypt_file(const std::string& src_path, const std::string& dst_path, char
 std::string decrypt_file(const std::string& fz_path, char key) {
     std::ifstream fz_file(fz_path, std::ios::binary);
     if (!fz_file) {
-        std::cerr << "无法打开加密文件：" << fz_path << std::endl;
+        ErrorReporter::reportSimple("FileError", "Cannot open encrypted file: " + fz_path);
         return "";
     }
     std::string encrypted((std::istreambuf_iterator<char>(fz_file)), std::istreambuf_iterator<char>());

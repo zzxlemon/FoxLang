@@ -48,9 +48,40 @@ public:
         }
     }
 
-    // 检查是否为系统库
+    // 注册库的外部调用路径（支持多段路径如 fox.sys.io.fs）
+    // internalName: 内部库名（如 "file"）
+    // externalPath: 外部调用路径（如 "fox.sys.io.fs"）
+    // 注册后，内部库名不再可用于 import，只能用外部路径
+    void registerLibraryName(const std::string& internalName, const std::string& externalPath) {
+        m_externalPaths[externalPath] = internalName;
+        m_hiddenInternalNames.insert(internalName);
+    }
+
+    // 检查是否为系统库（支持外部调用路径）
     bool isSystemLibrary(const std::string& libName) {
-        return systemLibraries.find(libName) != systemLibraries.end();
+        if (m_externalPaths.find(libName) != m_externalPaths.end()) return true;
+        if (systemLibraries.find(libName) != systemLibraries.end()) {
+            return m_hiddenInternalNames.find(libName) == m_hiddenInternalNames.end();
+        }
+        return false;
+    }
+
+    // 解析外部调用路径为内部库名
+    std::string resolveExternalPath(const std::string& name) const {
+        auto it = m_externalPaths.find(name);
+        if (it != m_externalPaths.end()) return it->second;
+        return name;
+    }
+
+    // 检查是否为已注册的外部路径
+    bool isExternalPath(const std::string& name) const {
+        return m_externalPaths.find(name) != m_externalPaths.end();
+    }
+
+    // 检查某个库是否已注册（即使被隐藏，如 "file" 被 "fox.sys.io.fs" 隐藏仍可识别）
+    bool hasLibrary(const std::string& libName) const {
+        return systemLibraries.find(libName) != systemLibraries.end()
+            || externalLibraries.find(libName) != externalLibraries.end();
     }
 
     // 调用系统库函数
@@ -59,12 +90,12 @@ public:
         const std::vector<Value>& args) {
         auto libIt = systemLibraries.find(libName);
         if (libIt == systemLibraries.end()) {
-            throw std::runtime_error("未找到库: " + libName);
+            throw std::runtime_error("Library not found: " + libName);
         }
 
         auto funcIt = libIt->second.find(funcName);
         if (funcIt == libIt->second.end()) {
-            throw std::runtime_error("库 " + libName + " 中未找到函数: " + funcName);
+            throw std::runtime_error("Function not found in library " + libName + ": " + funcName);
         }
 
         return funcIt->second(args);
@@ -121,7 +152,7 @@ public:
             return;
         }
 
-        throw std::runtime_error("无法找到外部库: " + libName);
+        throw std::runtime_error("Cannot find external library: " + libName);
     }
 
     bool isLibraryAvailable(const std::string& libName) {
@@ -146,8 +177,56 @@ public:
         return false;
     }
 
-    const std::unordered_set<std::string>& getImportedLibraries() const {
-        return loadedExternalLibs;
+    // 标记库为已导入
+    void markImported(const std::string& libName, const std::string& alias = "") {
+        m_importedLibraries.insert(libName);
+        if (!alias.empty()) {
+            m_aliasMap[alias] = libName;
+        }
+    }
+
+    bool isImported(const std::string& libName) const {
+        return m_importedLibraries.find(libName) != m_importedLibraries.end();
+    }
+
+    // 解析别名：alias/外部路径 → 真实库名，否则原样返回
+    std::string resolveAlias(const std::string& name) const {
+        auto it = m_aliasMap.find(name);
+        if (it != m_aliasMap.end()) return it->second;
+        auto it2 = m_externalPaths.find(name);
+        if (it2 != m_externalPaths.end()) return it2->second;
+        return name;
+    }
+
+    // 检查某个平名函数是否属于某个已导入的库
+    bool isFlatNameBlockedByImport(const std::string& flatName) const {
+        for (auto it = systemLibraries.begin(); it != systemLibraries.end(); ++it) {
+            const auto& libName = it->first;
+            const auto& funcMap = it->second;
+            if (funcMap.find(flatName) != funcMap.end()) {
+                if (m_importedLibraries.find(libName) != m_importedLibraries.end()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 检查某个平名函数属于哪个已导入的库（用于错误提示，返回外部路径）
+    std::string getBlockedLibName(const std::string& flatName) const {
+        for (auto it = systemLibraries.begin(); it != systemLibraries.end(); ++it) {
+            const auto& libName = it->first;
+            const auto& funcMap = it->second;
+            if (funcMap.find(flatName) != funcMap.end()) {
+                if (m_importedLibraries.find(libName) != m_importedLibraries.end()) {
+                    for (auto& [path, internal] : m_externalPaths) {
+                        if (internal == libName) return path;
+                    }
+                    return libName;
+                }
+            }
+        }
+        return "";
     }
 
 private:
@@ -156,7 +235,7 @@ private:
     void loadLibraryFromFile(const std::string& libName, const std::string& filePath) {
         std::ifstream file(filePath);
         if (!file.is_open()) {
-            throw std::runtime_error("无法打开库文件: " + filePath);
+            throw std::runtime_error("Cannot open library file: " + filePath);
         }
         std::string line;
         while (std::getline(file, line)) {
@@ -174,7 +253,7 @@ private:
                 nameInFile.erase(0, nameInFile.find_first_not_of(" \t"));
                 nameInFile.erase(nameInFile.find_last_not_of(" \t") + 1);
                 if (nameInFile != libName) {
-                    throw std::runtime_error("库名不匹配: " + nameInFile + " != " + libName);
+                    throw std::runtime_error("Library name mismatch: " + nameInFile + " != " + libName);
                 }
             }
         }
@@ -187,6 +266,10 @@ private:
     std::unordered_map<std::string, std::string> externalLibraryPaths;
     std::unordered_map<std::string, bool> externalLibsToLoad;
     std::unordered_set<std::string> loadedExternalLibs;
+    std::unordered_set<std::string> m_importedLibraries;
+    std::unordered_map<std::string, std::string> m_aliasMap;
+    std::unordered_map<std::string, std::string> m_externalPaths;
+    std::unordered_set<std::string> m_hiddenInternalNames;
 };
 
 // 初始化系统库（声明）

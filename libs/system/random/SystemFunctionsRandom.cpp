@@ -4,9 +4,11 @@
 #include <cmath>
 #include <sstream>
 #include <climits>   // for INT_MIN, INT_MAX
+#include <chrono>
 
 std::mt19937& Random::rng() {
-    static std::mt19937 gen(std::random_device{}());
+    static std::mt19937 gen(static_cast<unsigned int>(
+        std::chrono::system_clock::now().time_since_epoch().count()));
     return gen;
 }
 
@@ -18,19 +20,19 @@ static int toIntSafe(const Value& v, const char* paramName) {
         // 检查是否超出 int 范围
         if (d < static_cast<double>(INT_MIN) || d > static_cast<double>(INT_MAX)) {
             std::ostringstream oss;
-            oss << "random函数参数错误：" << paramName << " 值 " << d << " 超出 int 范围";
+            oss << "random function argument error: " << paramName << " value " << d << " exceeds int range";
             throw std::runtime_error(oss.str());
         }
         int i = static_cast<int>(d);
         if (std::fabs(d - i) > 1e-9) {
             std::ostringstream oss;
-            oss << "random函数参数错误：" << paramName << " 需要整数，但传入了非整数浮点数 " << d;
+            oss << "random function argument error: " << paramName << " requires integer, but got non-integer double " << d;
             throw std::runtime_error(oss.str());
         }
         return i;
     }
     std::ostringstream oss;
-    oss << "random函数参数错误：" << paramName << " 必须是数字（int或double）";
+    oss << "random function argument error: " << paramName << " must be a number (int or double)";
     throw std::runtime_error(oss.str());
 }
 
@@ -39,13 +41,13 @@ static double toDoubleSafe(const Value& v, const char* paramName) {
     if (v.getType() == Value::Type::Int) return static_cast<double>(v.asInt());
     if (v.getType() == Value::Type::Double) return v.asDouble();
     std::ostringstream oss;
-    oss << "random函数参数错误：" << paramName << " 必须是数字（int或double）";
+    oss << "random function argument error: " << paramName << " must be a number (int or double)";
     throw std::runtime_error(oss.str());
 }
 
 Value Random::RandomStart(const std::vector<Value>& args) {
     if (args.size() != 3) {
-        throw std::runtime_error("random函数需要3个参数：random('int', min, max) 或 random(\"double\", min, max)");
+        throw std::runtime_error("random function requires 3 arguments: random('int', min, max) or random(\"double\", min, max)");
     }
 
     const Value& random_type_v = args[0];
@@ -63,14 +65,14 @@ Value Random::RandomStart(const std::vector<Value>& args) {
         return RandomDouble(min, max);
     }
     else {
-        throw std::runtime_error("random函数第一个参数必须是字符串 'int' 或 'double'");
+        throw std::runtime_error("random function's first argument must be string 'int' or 'double'");
     }
 }
 
 Value Random::RandomInt(const int min, const int max) {
     if (min > max) {
         std::ostringstream oss;
-        oss << "random函数参数错误：RandomInt 要求 min <= max，实际 min=" << min << ", max=" << max;
+        oss << "random function argument error: RandomInt requires min <= max, actual min=" << min << ", max=" << max;
         throw std::runtime_error(oss.str());
     }
     // uniform_int_distribution 包含两端 [min, max]
@@ -80,7 +82,7 @@ Value Random::RandomInt(const int min, const int max) {
 Value Random::RandomDouble(const double min, const double max) {
     if (min > max) {
         std::ostringstream oss;
-        oss << "random函数参数错误：RandomDouble 要求 min <= max，实际 min=" << min << ", max=" << max;
+        oss << "random function argument error: RandomDouble requires min <= max, actual min=" << min << ", max=" << max;
         throw std::runtime_error(oss.str());
     }
     // uniform_real_distribution 生成 [min, max) 范围内的浮点数

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <memory>
 #include <string>
+#include <vector>
 
 class Interpreter;
 enum class CastType { Int, Double };
@@ -57,6 +58,27 @@ private:
     std::string value;
 public:
     explicit StringExpr(const std::string& v);
+    Value evaluate(std::unordered_map<std::string, Value>& variables,
+        std::unordered_map<std::string, Function>& functions) override;
+};
+
+// 数组字面量节点
+class ArrayExpr : public Expr {
+private:
+    std::vector<std::unique_ptr<Expr>> elements;
+public:
+    explicit ArrayExpr(std::vector<std::unique_ptr<Expr>>&& elems);
+    Value evaluate(std::unordered_map<std::string, Value>& variables,
+        std::unordered_map<std::string, Function>& functions) override;
+};
+
+// 数组索引访问节点
+class IndexExpr : public Expr {
+private:
+    std::unique_ptr<Expr> arrayExpr;
+    std::unique_ptr<Expr> indexExpr;
+public:
+    IndexExpr(std::unique_ptr<Expr> arr, std::unique_ptr<Expr> idx);
     Value evaluate(std::unordered_map<std::string, Value>& variables,
         std::unordered_map<std::string, Function>& functions) override;
 };
@@ -136,5 +158,12 @@ struct IfStatement {
 
 struct WhileStatement {
     std::string condition;
+    std::vector<std::string> body;
+};
+
+struct ForStatement {
+    std::string init;
+    std::string condition;
+    std::string iter;
     std::vector<std::string> body;
 };
