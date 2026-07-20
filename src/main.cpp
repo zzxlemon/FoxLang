@@ -1,0 +1,299 @@
+#include "./util/common.hpp"
+#include "./interpreter/interpreter.hpp"
+#include "./util/utils.hpp"
+#include "./util/error_reporter.hpp"
+#include "./vm/bytecode.hpp"
+#include "./vm/far.hpp"
+#include <iostream>
+#include <cstdio>
+#include <fstream>
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#include <locale.h>
+#endif
+
+std::string fz_name_file = "";
+std::string fz_name_file_v = "";
+const char XOR_KEY = 0x2A;
+std::string encrypt_key = "";
+
+#ifdef _WIN32
+static void enableWindowsUtf8() {
+    // 1. Console output code page → UTF-8
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+
+    // 2. CRT stdout/stderr → binary mode，不做任何编码转换
+    //    UTF-8 字节直达终端（终端已是 CP_UTF8）
+    fflush(stdout);
+    _setmode(_fileno(stdout), _O_BINARY);
+    fflush(stderr);
+    _setmode(_fileno(stderr), _O_BINARY);
+
+    // 3. C++ locale
+    setlocale(LC_ALL, ".UTF-8");
+
+    // 4. Enable ANSI escape processing（for error_reporter colors）
+    HANDLE outHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (outHandle != INVALID_HANDLE_VALUE) {
+        DWORD mode;
+        if (GetConsoleMode(outHandle, &mode)) {
+#ifdef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            SetConsoleMode(outHandle, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#else
+            SetConsoleMode(outHandle, mode | ENABLE_PROCESSED_OUTPUT);
+#endif
+        }
+    }
+    HANDLE errHandle = GetStdHandle(STD_ERROR_HANDLE);
+    if (errHandle != INVALID_HANDLE_VALUE) {
+        DWORD mode;
+        if (GetConsoleMode(errHandle, &mode)) {
+#ifdef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            SetConsoleMode(errHandle, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#else
+            SetConsoleMode(errHandle, mode | ENABLE_PROCESSED_OUTPUT);
+#endif
+        }
+    }
+}
+#endif
+
+static void CreateFile(const std::string& source_code) {
+    std::ofstream outfile(fz_name_file_v, std::ios::binary);
+    if (outfile.is_open()) {
+        outfile.write(source_code.c_str(), source_code.size());
+        outfile.close();
+        std::cout << "File " << fz_name_file_v << " created." << std::endl;
+    }
+    else {
+        ErrorReporter::reportSimple("FileError", "File " + fz_name_file_v + " open/create failed");
+    }
+}
+
+static void fz(const std::string& key) {
+    encrypt_file_with_key(fz_name_file, fz_name_file_v, key);
+}
+
+static void fz1(const std::string& key) {
+    std::string source_code = decrypt_file_with_key(fz_name_file, key);
+    CreateFile(source_code);
+}
+
+int main(int argc, char** argv) { 
+#ifdef _WIN32
+    enableWindowsUtf8();
+#endif
+    Interpreter interpreter;
+    if (argc == 1) {
+        return 0;  
+    }
+
+    int v1 = 1;
+    std::string filename;
+    for (int i = 1; i < argc; i++) {
+        std::string in = argv[i];
+        if (in == "-version" || in == "-v") {
+            printf("FoxLang Version: '%s'\n", fox_version.c_str());
+            printf("FoxLang-VM 64-Bit VM (beta %s, mixed mode)\n", fox_vm_version.c_str());
+
+        }
+        else if (in == "-f" || in == "--file") {
+            if (i + 1 >= argc) {
+                ErrorReporter::reportSimple("ArgumentError", "'-f' requires a filename");
+                return 1;
+            }
+            filename = argv[i + 1];
+            i++;
+        }
+        else if (argv[i] == "-str"){
+            if (argv[i + 1] == "utf-8" || argv[i + 1] == "UTF-8"){
+                system("chcp 65001");
+            }
+            else if (argv[i + 1] == "gbk" || argv[i + 1] == "GBK"){
+                system("chcp 936");
+            }
+            else{
+                ErrorReporter::reportSimple("ArgumentError", "'-str' requires an encoding format (utf-8 or gbk)");
+                return 1;
+            }
+        }
+        else if (in == "OutInfo=true") {
+            isOutInfo = true;
+        }
+        else if (in == "pack=true") {
+            v1 = 2;
+            if (i + 3 >= argc) {
+                ErrorReporter::reportSimple("ArgumentError", "pack=true requires 3 args: input output key");
+                return 1;
+            }
+            fz_name_file = argv[i + 1];
+            fz_name_file += ".fx";
+            fz_name_file_v = argv[i + 2];
+            fz_name_file_v += ".fz";
+            encrypt_key = argv[i + 3];
+            i += 3;
+        }
+        else if (in == "pack=false") {
+            v1 = 3;
+            if (i + 3 >= argc) {
+                ErrorReporter::reportSimple("ArgumentError", "pack=false requires 3 args: input output key");
+                return 1;
+            }
+            fz_name_file = argv[i + 1];
+            fz_name_file += ".fz";
+            fz_name_file_v = argv[i + 2];
+            fz_name_file_v += ".fx";
+            encrypt_key = argv[i + 3];
+            i += 3;
+        }
+        else if (in == "-c" || in == "--compile") {
+            if (i + 1 >= argc) {
+                ErrorReporter::reportSimple("ArgumentError", "'-c' requires a filename");
+                return 1;
+            }
+            filename = argv[i + 1];
+            i++;
+            std::string fullCode = read_file(filename);
+            if (fullCode.empty()) return 1;
+            try {
+                BytecodeCompiler compiler;
+                CompiledProgram prog = compiler.compile(fullCode, filename);
+                std::vector<uint8_t> fcData = prog.serialize();
+                std::string basePath = filename;
+                size_t dot = basePath.rfind('.');
+                if (dot != std::string::npos) basePath = basePath.substr(0, dot);
+                size_t sep = basePath.find_last_of("/\\");
+                std::string baseName = (sep != std::string::npos) ? basePath.substr(sep + 1) : basePath;
+                std::string parentDir = (sep != std::string::npos) ? basePath.substr(0, sep) : ".";
+                std::string fcDir = parentDir + "\\.fc";
+                CreateDirectoryA(fcDir.c_str(), NULL);
+                std::string outName = fcDir + "\\" + baseName + ".fc";
+                std::ofstream fcout(outName, std::ios::binary);
+                if (fcout.is_open()) {
+                    fcout.write(reinterpret_cast<const char*>(fcData.data()), fcData.size());
+                    fcout.close();
+                    std::cout << "Compiled to " << outName << " (" << fcData.size() << " bytes)" << std::endl;
+                } else {
+                    ErrorReporter::reportSimple("FileError", "Cannot create .fc file: " + outName);
+                }
+            } catch (const std::exception& e) {
+                ErrorReporter::reportFromException("CompileError", e.what());
+                return 1;
+            }
+            return 0;
+        }
+        else if (in == "-fc" || in == "--fc-run") {
+            if (i + 1 >= argc) {
+                ErrorReporter::reportSimple("ArgumentError", "'-fc' requires a filename");
+                return 1;
+            }
+            filename = argv[i + 1];
+            i++;
+            // Try direct path first, then parentDir\.fc\<basename>.fc
+            std::string fcFile = filename;
+            if (access(fcFile.c_str(), 0) != 0 || filename.find(".fc") == std::string::npos) {
+                size_t dot = filename.rfind('.');
+                std::string base = (dot != std::string::npos) ? filename.substr(0, dot) : filename;
+                size_t sep = base.find_last_of("/\\");
+                std::string baseName = (sep != std::string::npos) ? base.substr(sep + 1) : base;
+                std::string parentDir = (sep != std::string::npos) ? base.substr(0, sep) : ".";
+                std::string altPath = parentDir + "\\.fc\\" + baseName + ".fc";
+                if (access(altPath.c_str(), 0) == 0) fcFile = altPath;
+            }
+            std::string fullCode = read_file(fcFile);
+            if (fullCode.empty()) return 1;
+            try {
+                std::vector<uint8_t> fcData(fullCode.begin(), fullCode.end());
+                CompiledProgram prog = CompiledProgram::deserialize(fcData);
+                RegFunc(); // initialize system libraries for function resolution
+                VM vm;
+                vm.loadProgram(prog);
+                vm.run();
+            } catch (const std::exception& e) {
+                ErrorReporter::reportFromException("RuntimeError", e.what());
+                return 1;
+            }
+            return 0;
+        }
+        else if (in == "-p" || in == "--package") {
+            if (i + 2 >= argc) {
+                ErrorReporter::reportSimple("ArgumentError", "'-p' requires: output.far input1.fc [input2.fc ...]");
+                return 1;
+            }
+            std::string outputPath = argv[i + 1];
+            std::vector<std::string> inputs;
+            for (int j = i + 2; j < argc; j++) {
+                if (argv[j][0] == '-') break;
+                inputs.push_back(argv[j]);
+            }
+            i += 1 + static_cast<int>(inputs.size());
+            if (!farPackage(outputPath, inputs)) return 1;
+            return 0;
+        }
+        else if (in == "-u" || in == "--unpack") {
+            if (i + 2 >= argc) {
+                ErrorReporter::reportSimple("ArgumentError", "'-u' requires: archive.far [output_dir]");
+                return 1;
+            }
+            std::string archivePath = argv[i + 1];
+            std::string outputDir = (i + 2 < argc && argv[i + 2][0] != '-') ? argv[i + 2] : "output";
+            if (argv[i + 2][0] != '-') i++;
+            i++;
+            if (!farUnpack(archivePath, outputDir)) return 1;
+            return 0;
+        }
+        else if (in == "-far" || in == "--far-run") {
+            if (i + 1 >= argc) {
+                ErrorReporter::reportSimple("ArgumentError", "'-far' requires a filename");
+                return 1;
+            }
+            filename = argv[i + 1];
+            i++;
+            RegFunc();
+            if (!farRun(filename)) return 1;
+            return 0;
+        }
+        else if (in == "-help" || in == "-h") {
+            std::cout << "FoxLang Interpreter - Usage:" << std::endl;
+            std::cout << "  -f <file>               Run FoxLang source file" << std::endl;
+            std::cout << "  -c <file>               Compile .fox -> .fc bytecode" << std::endl;
+            std::cout << "  -fc <file>              Run .fc bytecode file" << std::endl;
+            std::cout << "  -p <out.far> <files>    Package files into .far archive" << std::endl;
+            std::cout << "  -u <archive.far> [dir]  Extract .far archive" << std::endl;
+            std::cout << "  -far <archive.far>      Run main.fc from .far archive" << std::endl;
+            std::cout << "  -version                Show version info" << std::endl;
+            std::cout << "  OutInfo=true            Enable verbose output" << std::endl;
+            std::cout << "  pack=true               Encrypt .fx -> .fz file" << std::endl;
+            std::cout << "  pack=false              Decrypt .fz -> .fx file" << std::endl;
+            return 0;
+        }
+        else {
+            ErrorReporter::reportSimple("ArgumentError", "unknown parameter '" + in + "'");
+            return 1;
+        }
+    }
+    
+    if (isOutInfo)
+        std::cout << "Command parsing complete." << std::endl;
+    if (v1 == 2) {
+        fz(encrypt_key);
+    }
+    else if (v1 == 3) {
+        fz1(encrypt_key);
+    }
+
+    if (!filename.empty()) {
+        std::string fullCode = read_file(filename);
+        ErrorReporter::setSource(filename, fullCode);
+        RegFunc(); // 初始化系统库，以便 import 能正确识别
+        interpreter.parseCode(fullCode, filename);
+        if (!interpreter.parse_failed) {
+            interpreter.runMainFunc();
+        }
+    }
+
+    return 0;
+}

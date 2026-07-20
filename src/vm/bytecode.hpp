@@ -1,0 +1,196 @@
+#pragma once
+#include "../util/common.hpp"
+#include "../frontend/value.hpp"
+#include "../frontend/function.hpp"
+#include "../frontend/token.hpp"
+#include "../frontend/lexer.hpp"
+#include "../frontend/parser.hpp"
+#include "../interpreter/interpreter.hpp"
+#include "../interpreter/library_manager.hpp"
+#include <vector>
+#include <string>
+#include <cstdint>
+#include <unordered_map>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <stdexcept>
+#include <cstring>
+#include <cmath>
+
+// ============================================================
+// Opcodes
+// ============================================================
+enum class OpCode : uint8_t {
+    OP_RETURN          = 0x00,
+    OP_CONSTANT        = 0x01,
+    OP_NEGATE          = 0x02,
+    OP_ADD             = 0x03,
+    OP_SUB             = 0x04,
+    OP_MUL             = 0x05,
+    OP_DIV             = 0x06,
+    OP_TRUE            = 0x07,
+    OP_FALSE           = 0x08,
+    OP_NIL             = 0x09,
+    OP_NOT             = 0x0A,
+    OP_EQ              = 0x0B,
+    OP_NE              = 0x0C,
+    OP_GT              = 0x0D,
+    OP_LT              = 0x0E,
+    OP_GE              = 0x0F,
+    OP_LE              = 0x10,
+    OP_PRINT           = 0x11,
+    OP_PRINTLN         = 0x12,
+    OP_POP             = 0x13,
+    OP_DEF_GLOBAL      = 0x14,
+    OP_GET_GLOBAL      = 0x15,
+    OP_SET_GLOBAL      = 0x16,
+    OP_GET_LOCAL       = 0x17,
+    OP_SET_LOCAL       = 0x18,
+    OP_JMP             = 0x19,
+    OP_JMP_IF_FALSE    = 0x1A,
+    OP_LOOP            = 0x1B,
+    OP_CALL            = 0x1C,
+    OP_INPUT           = 0x1D,
+    OP_CAST_INT        = 0x1E,
+    OP_CAST_DOUBLE     = 0x1F,
+    OP_ARRAY           = 0x20,
+    OP_INDEX_GET       = 0x21,
+    OP_INDEX_SET       = 0x22,
+    OP_AND             = 0x23,
+    OP_OR              = 0x24,
+    OP_ENDLN           = 0x25,
+    OP_EXIT            = 0x26,
+    OP_IMPORT          = 0x27,
+    OP_HALT            = 0xFF,
+};
+
+// ============================================================
+// Chunk - a sequence of bytecode instructions
+// ============================================================
+struct Chunk {
+    std::vector<uint8_t> code;
+    std::vector<Value> constants;
+    std::vector<int> lines;
+
+    void write(uint8_t byte, int line);
+    void writeOp(OpCode op, int line);
+    void writeInt(uint32_t val, int line);
+    void writeShort(uint16_t val, int line);
+    void writeByte(uint8_t val, int line);
+
+    uint32_t readInt(size_t offset) const;
+    uint16_t readShort(size_t offset) const;
+    uint8_t readByte(size_t offset) const;
+
+    int addConstant(const Value& val);
+    int addConstantString(const std::string& str);
+    size_t addConstantDouble(double val);
+    size_t addConstantInt(int val);
+
+    void patchJump(size_t offset, size_t target);
+    void patchJumpOffset(size_t jumpInstrOffset, int32_t offset);
+
+    std::vector<uint8_t> serialize() const;
+    bool deserialize(const std::vector<uint8_t>& data);
+};
+
+// ============================================================
+// CompiledFunction - bytecode for a single function
+// ============================================================
+struct CompiledFunction {
+    std::string name;
+    std::string returnType;
+    std::vector<Parameter> parameters;
+    Chunk chunk;
+    int localCount = 0;
+};
+
+// ============================================================
+// CompiledProgram - all functions compiled to bytecode
+// ============================================================
+struct ImportEntry {
+    std::string libName;
+    std::string alias;
+};
+
+struct CompiledProgram {
+    std::vector<CompiledFunction> functions;
+    std::unordered_map<std::string, size_t> functionIndex;
+    std::vector<ImportEntry> imports;
+
+    std::vector<uint8_t> serialize() const;
+    static CompiledProgram deserialize(const std::vector<uint8_t>& data);
+    void restoreImports() const;
+};
+
+// ============================================================
+// BytecodeCompiler - compiles FoxLang source to bytecode
+// ============================================================
+class BytecodeCompiler {
+public:
+    CompiledProgram compile(const std::string& source, const std::string& filename = "");
+
+private:
+    CompiledProgram program;
+    std::unordered_map<std::string, Value::Type> varTypes;
+
+    static std::string typeStr(Value::Type t);
+    static void typeError(const std::string& msg);
+
+    void recordImport(const std::string& libName, const std::string& alias);
+    void compileFunctionBody(CompiledFunction& cf, const std::vector<std::string>& body);
+    void compileIfStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum);
+    void compileWhileStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum);
+    void compileForStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum);
+
+    Value::Type compileExpression(CompiledFunction& cf, Lexer& lexer, Token& token);
+    void compileAssignment(CompiledFunction& cf, Lexer& lexer, Token& token, const std::string& varName);
+    Value::Type compilePrimary(CompiledFunction& cf, Lexer& lexer, Token& token);
+    void compileCall(CompiledFunction& cf, Lexer& lexer, Token& token, const std::string& funcName);
+    Value::Type compileCompare(CompiledFunction& cf, Lexer& lexer, Token& token);
+    Value::Type compileAdd(CompiledFunction& cf, Lexer& lexer, Token& token);
+    Value::Type compileMul(CompiledFunction& cf, Lexer& lexer, Token& token);
+    Value::Type compileUnary(CompiledFunction& cf, Lexer& lexer, Token& token);
+    void compileCastExpr(CompiledFunction& cf, Lexer& lexer, Token& token, CastType castType);
+
+    static void skipWhitespace(Lexer& lexer, Token& token);
+    static void eat(Lexer& lexer, Token& token, TokenT expected);
+    void parseBodyStatements(Lexer& lexer, Token& token, std::vector<std::string>& body);
+    std::string parseSingleStmt(Lexer& lexer, Token& token);
+};
+
+// ============================================================
+// VM - executes CompiledProgram bytecode
+// ============================================================
+class VM {
+public:
+    VM();
+    void loadProgram(const CompiledProgram& prog);
+    void run();
+
+private:
+    struct CallFrame {
+        const CompiledFunction* function;
+        std::vector<Value> locals;
+        size_t ip;
+    };
+
+    CompiledProgram program;
+    std::vector<Value> stack;
+    std::unordered_map<std::string, Value> globals;
+    std::vector<CallFrame> frames;
+    bool runtimeError;
+
+    Value peek(int distance = 0);
+    Value pop();
+    void push(const Value& val);
+    void resetStack();
+
+    void runtimeErr(const std::string& msg);
+
+    bool callFunction(const std::string& name, int argCount);
+    bool callSystemFunction(const std::string& name, int argCount);
+
+    Value executeSystemCall(const std::string& funcName, const std::vector<Value>& args);
+};
