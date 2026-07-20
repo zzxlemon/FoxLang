@@ -1,0 +1,95 @@
+#include "library_manager.hpp"
+#include "../util/common.hpp"
+// lib include
+#include "../../libs/system/random/SystemFunctionsRandom.h"
+#include "../../libs/system/fs/SystemFunctionsFile.h"
+#include "../../libs/system/math/SystemFunctionsMath.h"
+#include "../../libs/system/io/util/SystemFunctionUtil.h"
+
+void initSystemLibraries() {
+    auto& libMgr = LibraryManager::getInstance();
+
+    // 注册 random 库
+    libMgr.registerLibrary("random");
+    libMgr.registerLibraryName("random", "fox.std.random");
+    libMgr.registerSystemFunction("random", "random", [](const std::vector<Value>& args) -> Value {
+        Random random;
+        return random.RandomStart(args);
+        });
+
+    // 注册 file 库（外部调用路径: fox.sys.io.fs）
+    libMgr.registerLibrary("file");
+    libMgr.registerLibraryName("file", "fox.sys.io.fs");
+    libMgr.registerSystemFunction("file", "file_open", [](const std::vector<Value>& args) -> Value {
+        File file;
+        return file.FileOpen(args);
+        });
+    libMgr.registerSystemFunction("file", "file_read", [](const std::vector<Value>& args) -> Value {
+        File file;
+        return file.FileRead(args);
+        });
+    libMgr.registerSystemFunction("file", "file_write", [](const std::vector<Value>& args) -> Value {
+        File file;
+        return file.FileWrite(args);
+        });
+    libMgr.registerSystemFunction("file", "file_close", [](const std::vector<Value>& args) -> Value {
+        File file;
+        return file.FileClose(args);
+        });
+    libMgr.registerSystemFunction("file", "file_remove", [](const std::vector<Value>& args) -> Value {
+        File file;
+        return file.FileDelete(args);
+        });
+    
+    // Register Math lib
+	libMgr.registerLibrary("math");
+    libMgr.registerLibraryName("math", "fox.std.math");
+    libMgr.registerSystemFunction("math", "sin", [](const std::vector<Value>& args) -> Value {
+        Math math;
+        return math.sin(args);
+		});
+    libMgr.registerSystemFunction("math", "cos", [](const std::vector<Value>& args)->Value {
+        Math math;
+        return math.cos(args);
+	});
+    libMgr.registerSystemFunction("math", "tan", [](const std::vector<Value>& args) -> Value {
+        Math math;
+        return math.tan(args);
+        });
+
+    // Register util lib
+    libMgr.registerLibrary("util");
+    libMgr.registerLibraryName("util", "fox.std.util");
+    libMgr.registerSystemFunction("util", "length", [](const std::vector<Value>& args) -> Value {
+        Util util;
+        return util.length(args);
+        });
+    libMgr.registerSystemFunction("util", "IntChangeString", [](const std::vector<Value>& args) -> Value {
+        Util util;  
+        return util.IntChangeString(args);
+        });
+    libMgr.registerSystemFunction("util", "StringChangeInt", [](const std::vector<Value>& args) -> Value {
+        Util util;
+        return util.StringChangeInt(args);
+        });
+    libMgr.registerSystemFunction("util", "StringChangeDouble", [](const std::vector<Value>& args) -> Value {
+        Util util;
+        return util.StringChangeDouble(args);
+        });
+    libMgr.registerSystemFunction("util", "DoubleChangeString", [](const std::vector<Value>& args) -> Value {
+        Util util;
+        return util.DoubleChangeString(args);
+        });
+    libMgr.registerSystemFunction("util", "DoubleChangeInt", [](const std::vector<Value>& args) -> Value {
+        Util util;
+        return util.DoubleChangeInt(args);
+        });
+    libMgr.registerSystemFunction("util", "IntChangeDouble", [](const std::vector<Value>& args) -> Value {
+        Util util;
+        return util.IntChangeDouble(args);
+        });
+
+    if (isOutInfo) {
+        std::cout << "[系统] 系统库初始化完成" << std::endl;
+    }
+}
