@@ -1,0 +1,4 @@
+func main() {
+    a = random("int", 0, 100)
+    print(a)
+}

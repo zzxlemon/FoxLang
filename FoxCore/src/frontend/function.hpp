@@ -10,6 +10,6 @@ struct Parameter {
 struct Function {
     std::string name;              
     std::string returnType;        
-    std::vector<Parameter> parameters;  // 鍙傛暟鍒楄〃
+    std::vector<Parameter> parameters;  // 参数列表
     std::vector<std::string> body;  
 };

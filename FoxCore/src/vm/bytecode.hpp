@@ -11,6 +11,7 @@
 #include <string>
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -121,6 +122,7 @@ struct CompiledProgram {
 
     std::vector<uint8_t> serialize() const;
     static CompiledProgram deserialize(const std::vector<uint8_t>& data);
+    static CompiledProgram deserialize(const uint8_t* data, size_t size);
     void restoreImports() const;
 };
 
@@ -130,34 +132,20 @@ struct CompiledProgram {
 class BytecodeCompiler {
 public:
     CompiledProgram compile(const std::string& source, const std::string& filename = "");
+    Value::Type compileExpr(CompiledFunction& cf, Expr* expr);
+
+    bool validateCall(const std::string& name);
 
 private:
     CompiledProgram program;
     std::unordered_map<std::string, Value::Type> varTypes;
+    std::unordered_set<std::string> userFuncNames;
 
     static std::string typeStr(Value::Type t);
     static void typeError(const std::string& msg);
 
-    void recordImport(const std::string& libName, const std::string& alias);
     void compileFunctionBody(CompiledFunction& cf, const std::vector<std::string>& body);
-    void compileIfStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum);
-    void compileWhileStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum);
-    void compileForStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum);
-
-    Value::Type compileExpression(CompiledFunction& cf, Lexer& lexer, Token& token);
-    void compileAssignment(CompiledFunction& cf, Lexer& lexer, Token& token, const std::string& varName);
-    Value::Type compilePrimary(CompiledFunction& cf, Lexer& lexer, Token& token);
-    void compileCall(CompiledFunction& cf, Lexer& lexer, Token& token, const std::string& funcName);
-    Value::Type compileCompare(CompiledFunction& cf, Lexer& lexer, Token& token);
-    Value::Type compileAdd(CompiledFunction& cf, Lexer& lexer, Token& token);
-    Value::Type compileMul(CompiledFunction& cf, Lexer& lexer, Token& token);
-    Value::Type compileUnary(CompiledFunction& cf, Lexer& lexer, Token& token);
-    void compileCastExpr(CompiledFunction& cf, Lexer& lexer, Token& token, CastType castType);
-
     static void skipWhitespace(Lexer& lexer, Token& token);
-    static void eat(Lexer& lexer, Token& token, TokenT expected);
-    void parseBodyStatements(Lexer& lexer, Token& token, std::vector<std::string>& body);
-    std::string parseSingleStmt(Lexer& lexer, Token& token);
 };
 
 // ============================================================
@@ -173,6 +161,7 @@ private:
     struct CallFrame {
         const CompiledFunction* function;
         std::vector<Value> locals;
+        std::unordered_map<std::string, Value> savedGlobals;
         size_t ip;
     };
 

@@ -12,12 +12,12 @@ std::mt19937& Random::rng() {
     return gen;
 }
 
-// å°† Value è½¬ä¸º int
+// ½« Value ×ªÎª int
 static int toIntSafe(const Value& v, const char* paramName) {
     if (v.getType() == Value::Type::Int) return v.asInt();
     if (v.getType() == Value::Type::Double) {
         double d = v.asDouble();
-        // æ£€æŸ¥æ˜¯å¦è¶…å‡º int èŒƒå›´
+        // ¼ì²éÊÇ·ñ³¬³ö int ·¶Î§
         if (d < static_cast<double>(INT_MIN) || d > static_cast<double>(INT_MAX)) {
             std::ostringstream oss;
             oss << "random function argument error: " << paramName << " value " << d << " exceeds int range";
@@ -36,7 +36,7 @@ static int toIntSafe(const Value& v, const char* paramName) {
     throw std::runtime_error(oss.str());
 }
 
-// å°† Value è½¬ä¸º double
+// ½« Value ×ªÎª double
 static double toDoubleSafe(const Value& v, const char* paramName) {
     if (v.getType() == Value::Type::Int) return static_cast<double>(v.asInt());
     if (v.getType() == Value::Type::Double) return v.asDouble();
@@ -75,7 +75,7 @@ Value Random::RandomInt(const int min, const int max) {
         oss << "random function argument error: RandomInt requires min <= max, actual min=" << min << ", max=" << max;
         throw std::runtime_error(oss.str());
     }
-    // uniform_int_distribution åŒ…å«ä¸¤ç«¯ [min, max]
+    // uniform_int_distribution °üº¬Á½¶Ë [min, max]
     return Value(std::uniform_int_distribution<int>(min, max)(rng()));
 }
 
@@ -85,6 +85,6 @@ Value Random::RandomDouble(const double min, const double max) {
         oss << "random function argument error: RandomDouble requires min <= max, actual min=" << min << ", max=" << max;
         throw std::runtime_error(oss.str());
     }
-    // uniform_real_distribution ç”Ÿæˆ [min, max) èŒƒå›´å†…çš„æµ®ç‚¹æ•°
+    // uniform_real_distribution Éú³É [min, max) ·¶Î§ÄÚµÄ¸¡µãÊı
     return Value(std::uniform_real_distribution<double>(min, max)(rng()));
 }

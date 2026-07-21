@@ -1,4 +1,6 @@
 #include "bytecode.hpp"
+#include <typeinfo>
+#include "../util/error_reporter.hpp"
 
 // This VM name is FVM
 
@@ -135,8 +137,8 @@ std::vector<uint8_t> Chunk::serialize() const {
             data.push_back(4);
             break;
         }
-        }
     }
+}
 
     // Code
     write32(static_cast<uint32_t>(code.size()));
@@ -278,12 +280,12 @@ std::vector<uint8_t> CompiledProgram::serialize() const {
     return data;
 }
 
-CompiledProgram CompiledProgram::deserialize(const std::vector<uint8_t>& data) {
+static CompiledProgram deserializeRaw(const uint8_t* data, size_t size) {
     CompiledProgram prog;
     size_t offset = 0;
 
     auto read32 = [&]() -> uint32_t {
-        if (offset + 4 > data.size()) return 0;
+        if (offset + 4 > size) return 0;
         uint32_t v = static_cast<uint32_t>(data[offset]) |
                      (static_cast<uint32_t>(data[offset + 1]) << 8) |
                      (static_cast<uint32_t>(data[offset + 2]) << 16) |
@@ -294,14 +296,13 @@ CompiledProgram CompiledProgram::deserialize(const std::vector<uint8_t>& data) {
 
     auto readStr = [&]() -> std::string {
         uint32_t len = read32();
-        if (offset + len > data.size()) return "";
-        std::string s(reinterpret_cast<const char*>(data.data() + offset), len);
+        if (offset + len > size) return "";
+        std::string s(reinterpret_cast<const char*>(data + offset), len);
         offset += len;
         return s;
     };
 
-    // Magic check
-    if (offset + 4 > data.size()) {
+    if (offset + 4 > size) {
         throw std::runtime_error("Invalid .fc file: too short");
     }
     if (data[offset] != 'F' || data[offset+1] != 'O' || data[offset+2] != 'X' || data[offset+3] != 'C') {
@@ -309,13 +310,11 @@ CompiledProgram CompiledProgram::deserialize(const std::vector<uint8_t>& data) {
     }
     offset += 4;
 
-    // Version
     uint32_t version = read32();
     if (version != 1) {
         throw std::runtime_error("Unsupported .fc version: " + std::to_string(version));
     }
 
-    // Import entries
     uint32_t importCount = read32();
     for (uint32_t i = 0; i < importCount; i++) {
         ImportEntry ie;
@@ -325,7 +324,6 @@ CompiledProgram CompiledProgram::deserialize(const std::vector<uint8_t>& data) {
     }
     prog.restoreImports();
 
-    // Number of functions
     uint32_t funcCount = read32();
 
     for (uint32_t i = 0; i < funcCount; i++) {
@@ -343,45 +341,35 @@ CompiledProgram CompiledProgram::deserialize(const std::vector<uint8_t>& data) {
 
         cf.localCount = static_cast<int>(read32());
 
-        // Deserialize chunk
-        // First, we need to know the chunk's serialized size
-        // The chunk serialization starts with constant count (4) + constant data + code size (4) + code
-        // We'll let the chunk's deserialize handle parsing from current offset
-        // But we need to know the size... let's compute it
-        // For simplicity, we'll parse the chunk data size by scanning through constants
-
         size_t chunkStart = offset;
 
-        // Read constants
-        if (offset + 4 > data.size()) throw std::runtime_error("Corrupt .fc: no constant count");
+        if (offset + 4 > size) throw std::runtime_error("Corrupt .fc: no constant count");
         uint32_t constCount = read32();
         for (uint32_t j = 0; j < constCount; j++) {
-            if (offset >= data.size()) throw std::runtime_error("Corrupt .fc: constant data");
+            if (offset >= size) throw std::runtime_error("Corrupt .fc: constant data");
             uint8_t type = data[offset++];
             switch (type) {
-            case 0: offset += 4; break; // int
-            case 1: offset += 8; break; // double
-            case 2: { // string
+            case 0: offset += 4; break;
+            case 1: offset += 8; break;
+            case 2: {
                 uint32_t slen = read32();
                 offset += slen;
                 break;
             }
-            case 3: { // array
+            case 3: {
                 uint32_t alen = read32();
-                offset += alen * 4; // approximate
+                offset += alen * 4;
                 break;
             }
-            default: break; // nil
+            default: break;
             }
         }
 
-        // Read code size
-        if (offset + 4 > data.size()) throw std::runtime_error("Corrupt .fc: no code size");
+        if (offset + 4 > size) throw std::runtime_error("Corrupt .fc: no code size");
         uint32_t codeSize = read32();
         offset += codeSize;
 
-        // Now parse the chunk from chunkStart
-        std::vector<uint8_t> chunkData(data.begin() + chunkStart, data.begin() + offset);
+        std::vector<uint8_t> chunkData(data + chunkStart, data + offset);
         cf.chunk.deserialize(chunkData);
 
         prog.functions.push_back(cf);
@@ -389,6 +377,14 @@ CompiledProgram CompiledProgram::deserialize(const std::vector<uint8_t>& data) {
     }
 
     return prog;
+}
+
+CompiledProgram CompiledProgram::deserialize(const std::vector<uint8_t>& data) {
+    return deserializeRaw(data.data(), data.size());
+}
+
+CompiledProgram CompiledProgram::deserialize(const uint8_t* data, size_t size) {
+    return deserializeRaw(data, size);
 }
 
 void CompiledProgram::restoreImports() const {
@@ -407,16 +403,6 @@ void BytecodeCompiler::skipWhitespace(Lexer& lexer, Token& token) {
         && isspace(static_cast<unsigned char>(token.value[0]))
         && token.value[0] != '\n') {
         token = lexer.nextToken();
-    }
-}
-
-void BytecodeCompiler::eat(Lexer& lexer, Token& token, TokenT expected) {
-    if (token.type == expected) {
-        token = lexer.nextToken();
-        skipWhitespace(lexer, token);
-    } else {
-        throw std::runtime_error("BytecodeCompiler: expected token " + std::to_string(expected)
-            + ", got " + std::to_string(token.type) + " ('" + token.value + "')");
     }
 }
 
@@ -440,6 +426,11 @@ CompiledProgram BytecodeCompiler::compile(const std::string& source, const std::
         ie.libName = libName;
         ie.alias = alias;
         program.imports.push_back(ie);
+    }
+
+    // Collect user-defined function names for call validation
+    for (const auto& [funcName, func] : parsedFunctions) {
+        userFuncNames.insert(funcName);
     }
 
     // Compile each function
@@ -470,266 +461,273 @@ CompiledProgram BytecodeCompiler::compile(const std::string& source, const std::
 }
 
 void BytecodeCompiler::compileFunctionBody(CompiledFunction& cf, const std::vector<std::string>& body) {
+    std::unordered_map<std::string, size_t> labelAddresses;
+    std::vector<std::pair<std::string, size_t>> gotoFixups;
+
+    class BytecodeStmtHandler : public StmtHandler {
+    public:
+        CompiledFunction& cf;
+        std::unordered_map<std::string, Value::Type>& varTypes;
+        BytecodeCompiler& compiler;
+        std::unordered_map<std::string, size_t>& labelAddresses;
+        std::vector<std::pair<std::string, size_t>>& gotoFixups;
+        BytecodeStmtHandler(CompiledFunction& c, std::unordered_map<std::string, Value::Type>& vt, BytecodeCompiler& comp,
+            std::unordered_map<std::string, size_t>& labels,
+            std::vector<std::pair<std::string, size_t>>& fixups)
+            : cf(c), varTypes(vt), compiler(comp), labelAddresses(labels), gotoFixups(fixups) {}
+
+        void onPrint(std::unique_ptr<Expr> arg) override {
+            compiler.compileExpr(cf, arg.get());
+            cf.chunk.writeOp(OpCode::OP_PRINT, 0);
+        }
+        void onPrintln(std::unique_ptr<Expr> arg) override {
+            compiler.compileExpr(cf, arg.get());
+            cf.chunk.writeOp(OpCode::OP_PRINTLN, 0);
+        }
+        void onExit(std::unique_ptr<Expr> arg) override {
+            compiler.compileExpr(cf, arg.get());
+            cf.chunk.writeOp(OpCode::OP_EXIT, 0);
+        }
+        Value onRet(std::unique_ptr<Expr> arg) override {
+            if (arg) compiler.compileExpr(cf, arg.get());
+            cf.chunk.writeOp(OpCode::OP_RETURN, 0);
+            return Value();
+        }
+        void onEndl() override {
+            cf.chunk.writeOp(OpCode::OP_ENDLN, 0);
+        }
+        void onInput(const std::string& varName) override {
+            cf.chunk.writeOp(OpCode::OP_INPUT, 0);
+            int nameIdx = cf.chunk.addConstantString(varName);
+            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
+            cf.chunk.writeOp(OpCode::OP_DEF_GLOBAL, 0);
+            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
+        }
+        void onCall(const std::string& name, std::vector<std::unique_ptr<Expr>> args) override {
+            if (!compiler.validateCall(name)) {
+                throw std::runtime_error(""); // Error already reported via ErrorReporter
+            }
+            for (auto& arg : args) {
+                compiler.compileExpr(cf, arg.get());
+            }
+            int nameIdx = cf.chunk.addConstantString(name);
+            cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
+            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
+            cf.chunk.writeOp(OpCode::OP_CALL, 0);
+            cf.chunk.writeByte(static_cast<uint8_t>(args.size()), 0);
+        }
+        void onAssign(const std::string& name, std::unique_ptr<Expr> expr) override {
+            Value::Type rhsType = compiler.compileExpr(cf, expr.get());
+            varTypes[name] = rhsType;
+            int nameIdx = cf.chunk.addConstantString(name);
+            cf.chunk.writeOp(OpCode::OP_DEF_GLOBAL, 0);
+            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
+        }
+        void onIndexAssign(const std::string& name, std::unique_ptr<Expr> index, std::unique_ptr<Expr> value) override {
+            compiler.compileExpr(cf, index.get());
+            int nameIdx = cf.chunk.addConstantString(name);
+            cf.chunk.writeOp(OpCode::OP_GET_GLOBAL, 0);
+            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
+            compiler.compileExpr(cf, value.get());
+            cf.chunk.writeOp(OpCode::OP_INDEX_SET, 0);
+        }
+        void onIf(IfStatement ifStmt) override {
+            Lexer condLexer(ifStmt.condition);
+            Token condToken = condLexer.nextToken();
+            BytecodeCompiler::skipWhitespace(condLexer, condToken);
+            auto condExpr = Parser::parseExpr(condLexer, condToken);
+            compiler.compileExpr(cf, condExpr.get());
+
+            size_t jumpInstr = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, 0);
+            cf.chunk.writeInt(0, 0);
+
+            for (const auto& stmt : ifStmt.body) {
+                Parser::parseLine(stmt, *this);
+            }
+
+            size_t afterBody = cf.chunk.code.size();
+            cf.chunk.patchJump(jumpInstr + 1, afterBody);
+        }
+        void onWhile(WhileStatement whileStmt) override {
+            size_t loopStart = cf.chunk.code.size();
+
+            Lexer condLexer(whileStmt.condition);
+            Token condToken = condLexer.nextToken();
+            BytecodeCompiler::skipWhitespace(condLexer, condToken);
+            auto condExpr = Parser::parseExpr(condLexer, condToken);
+            compiler.compileExpr(cf, condExpr.get());
+
+            size_t exitJump = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, 0);
+            cf.chunk.writeInt(0, 0);
+
+            for (const auto& stmt : whileStmt.body) {
+                Parser::parseLine(stmt, *this);
+            }
+
+            size_t afterBody = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_LOOP, 0);
+            int32_t loopOffset = static_cast<int32_t>(loopStart) - static_cast<int32_t>(afterBody + 5);
+            cf.chunk.writeInt(static_cast<uint32_t>(loopOffset), 0);
+            cf.chunk.patchJump(exitJump + 1, afterBody + 5);
+        }
+        void onFor(ForStatement forStmt) override {
+            if (!forStmt.init.empty()) {
+                Parser::parseLine(forStmt.init, *this);
+            }
+
+            size_t loopStart = cf.chunk.code.size();
+
+            if (!forStmt.condition.empty()) {
+                Lexer condLexer(forStmt.condition);
+                Token condToken = condLexer.nextToken();
+                BytecodeCompiler::skipWhitespace(condLexer, condToken);
+                auto condExpr = Parser::parseExpr(condLexer, condToken);
+                compiler.compileExpr(cf, condExpr.get());
+            } else {
+                cf.chunk.writeOp(OpCode::OP_TRUE, 0);
+            }
+
+            size_t exitJump = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, 0);
+            cf.chunk.writeInt(0, 0);
+
+            for (const auto& stmt : forStmt.body) {
+                Parser::parseLine(stmt, *this);
+            }
+
+            if (!forStmt.iter.empty()) {
+                Parser::parseLine(forStmt.iter, *this);
+            }
+
+            size_t afterBody = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_LOOP, 0);
+            int32_t loopOffset = static_cast<int32_t>(loopStart) - static_cast<int32_t>(afterBody + 5);
+            cf.chunk.writeInt(static_cast<uint32_t>(loopOffset), 0);
+            cf.chunk.patchJump(exitJump + 1, afterBody + 5);
+        }
+        void onFnLabel(const std::string& name) override {
+            labelAddresses[name] = cf.chunk.code.size();
+        }
+        void onGoto(const std::string& name) override {
+            size_t jumpAddrPos = cf.chunk.code.size() + 1;
+            cf.chunk.writeOp(OpCode::OP_JMP, 0);
+            cf.chunk.writeInt(0, 0);
+            gotoFixups.push_back({name, jumpAddrPos});
+        }
+    };
+
+    BytecodeStmtHandler handler(cf, varTypes, *this, labelAddresses, gotoFixups);
+
     for (const auto& line : body) {
         if (line.empty()) continue;
 
-        int lineNum = cf.chunk.code.size() > 0 ? 0 : 0;
+        // Check for type declaration (int/double/string var = expr)
+        // These are not handled by parseLine (interpreter ignores them)
+        std::string trimmed = line;
+        size_t start = trimmed.find_first_not_of(" \t");
+        if (start != std::string::npos) trimmed = trimmed.substr(start);
+        if (trimmed.rfind("int ", 0) == 0 || trimmed.rfind("double ", 0) == 0 || trimmed.rfind("string ", 0) == 0) {
+            std::string typeEnd;
+            if (trimmed.rfind("int ", 0) == 0) typeEnd = trimmed.substr(4);
+            else if (trimmed.rfind("double ", 0) == 0) typeEnd = trimmed.substr(7);
+            else typeEnd = trimmed.substr(7);
 
-        Lexer lexer(line);
-        Token token = lexer.nextToken();
-        skipWhitespace(lexer, token);
+            size_t eqPos = typeEnd.find('=');
+            std::string varName = typeEnd.substr(0, typeEnd.find_first_of(" ="));
+            size_t nonSpace = varName.find_last_not_of(" \t");
+            if (nonSpace != std::string::npos) varName = varName.substr(0, nonSpace + 1);
 
-        if (token.type == TOKEN_EOF) continue;
-
-        switch (token.type) {
-        case TOKEN_PRINT: {
-            eat(lexer, token, TOKEN_PRINT);
-            eat(lexer, token, TOKEN_LPAREN);
-            compileExpression(cf, lexer, token);
-            eat(lexer, token, TOKEN_RPAREN);
-            cf.chunk.writeOp(OpCode::OP_PRINT, lineNum);
-            break;
-        }
-        case TOKEN_IF: {
-            compileIfStatement(cf, lexer, token, lineNum);
-            break;
-        }
-        case TOKEN_WHILE: {
-            compileWhileStatement(cf, lexer, token, lineNum);
-            break;
-        }
-        case TOKEN_FOR: {
-            compileForStatement(cf, lexer, token, lineNum);
-            break;
-        }
-        case TOKEN_RET: {
-            eat(lexer, token, TOKEN_RET);
-            if (token.type != TOKEN_NEWLINE && token.type != TOKEN_EOF && token.type != TOKEN_RBRACE) {
-                compileExpression(cf, lexer, token);
+            if (eqPos != std::string::npos) {
+                std::string exprStr = typeEnd.substr(eqPos + 1);
+                Lexer exprLexer(exprStr);
+                Token exprToken = exprLexer.nextToken();
+                skipWhitespace(exprLexer, exprToken);
+                auto expr = Parser::parseExpr(exprLexer, exprToken);
+                Value::Type rhsType = BytecodeCompiler::compileExpr(cf, expr.get());
+                varTypes[varName] = rhsType;
+                int nameIdx = cf.chunk.addConstantString(varName);
+                cf.chunk.writeOp(OpCode::OP_DEF_GLOBAL, 0);
+                cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
             }
-            cf.chunk.writeOp(OpCode::OP_RETURN, lineNum);
-            break;
-        }
-        case TOKEN_END: {
-            cf.chunk.writeOp(OpCode::OP_ENDLN, lineNum);
-            break;
-        }
-        case TOKEN_EXIT: {
-            eat(lexer, token, TOKEN_EXIT);
-            eat(lexer, token, TOKEN_LPAREN);
-            compileExpression(cf, lexer, token);
-            eat(lexer, token, TOKEN_RPAREN);
-            cf.chunk.writeOp(OpCode::OP_EXIT, lineNum);
-            break;
-        }
-        case TOKEN_INPUT: {
-            eat(lexer, token, TOKEN_INPUT);
-            eat(lexer, token, TOKEN_LPAREN);
-            eat(lexer, token, TOKEN_RPAREN);
-            eat(lexer, token, TOKEN_ARROW);
-            std::string varName = token.value;
-            eat(lexer, token, TOKEN_IDENTIFIER);
-            cf.chunk.writeOp(OpCode::OP_INPUT, lineNum);
-            int nameIdx = cf.chunk.addConstantString(varName);
-            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), lineNum);
-            cf.chunk.writeOp(OpCode::OP_DEF_GLOBAL, lineNum);
-            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), lineNum);
-            break;
-        }
-        case TOKEN_IDENTIFIER: {
-            std::string identName = token.value;
-            eat(lexer, token, TOKEN_IDENTIFIER);
-
-            // Handle uppercase END (same as lowercase end)
-            if ((identName == "END" || identName == "end") && token.type != TOKEN_LPAREN && token.type != TOKEN_EQUAL) {
-                cf.chunk.writeOp(OpCode::OP_ENDLN, lineNum);
-                break;
-            }
-
-            if (token.type == TOKEN_LPAREN) {
-                // Function call: funcName(...)
-                compileCall(cf, lexer, token, identName);
-            } else if (token.type == TOKEN_EQUAL) {
-                // Assignment: var = expr
-                compileAssignment(cf, lexer, token, identName);
-            } else if (token.type == TOKEN_LBRACKET) {
-                // Array index assignment: arr[index] = expr
-                eat(lexer, token, TOKEN_LBRACKET);
-                compileExpression(cf, lexer, token);
-                eat(lexer, token, TOKEN_RBRACKET);
-                // Load array variable
-                int nameIdx = cf.chunk.addConstantString(identName);
-                cf.chunk.writeOp(OpCode::OP_GET_GLOBAL, lineNum);
-                cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), lineNum);
-                skipWhitespace(lexer, token);
-                eat(lexer, token, TOKEN_EQUAL);
-                // Value to set
-                compileExpression(cf, lexer, token);
-                cf.chunk.writeOp(OpCode::OP_INDEX_SET, lineNum);
-            } else {
-                throw std::runtime_error("Compile error: unexpected token after identifier '" + identName + "': " + token.value);
-            }
-            break;
-        }
-        default:
-            throw std::runtime_error("Compile error: unexpected token '" + token.value + "' (" + std::to_string(token.type) + ")");
-        }
-
-        // Pop leftover value if any
-        if (token.type == TOKEN_NEWLINE || token.type == TOKEN_EOF) {
-            // OK
+        } else {
+            Parser::parseLine(line, handler);
         }
     }
 
+    // Patch goto fixups
+    for (auto& fixup : gotoFixups) {
+        auto it = labelAddresses.find(fixup.first);
+        if (it == labelAddresses.end())
+            throw std::runtime_error("Undefined goto label: " + fixup.first);
+        cf.chunk.patchJump(fixup.second, it->second);
+    }
 }
 
-void BytecodeCompiler::compileIfStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum) {
-    eat(lexer, token, TOKEN_IF);
-    eat(lexer, token, TOKEN_LPAREN);
+bool BytecodeCompiler::validateCall(const std::string& name) {
+    size_t dotPos = name.rfind('.');
+    auto& libMgr = LibraryManager::getInstance();
 
-    // Compile condition
-    compileExpression(cf, lexer, token);
-    eat(lexer, token, TOKEN_RPAREN);
+    if (dotPos != std::string::npos) {
+        std::string libPrefix = name.substr(0, dotPos);
+        std::string funcOnly = name.substr(dotPos + 1);
+        std::string resolvedLib = libMgr.resolveAlias(libPrefix);
 
-    // Emit conditional jump (placeholder, will be patched)
-    size_t jumpInstr = cf.chunk.code.size();
-    cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, lineNum);
-    cf.chunk.writeInt(0, lineNum); // placeholder offset
-
-    eat(lexer, token, TOKEN_LBRACE);
-
-    // Parse and compile body statements
-    std::vector<std::string> body;
-    parseBodyStatements(lexer, token, body);
-    compileFunctionBody(cf, body);
-
-    // Patch the jump to right after body
-    size_t afterBody = cf.chunk.code.size();
-    cf.chunk.patchJump(jumpInstr + 1, afterBody);
-}
-
-void BytecodeCompiler::compileWhileStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum) {
-    size_t loopStart = cf.chunk.code.size();
-
-    eat(lexer, token, TOKEN_WHILE);
-    eat(lexer, token, TOKEN_LPAREN);
-
-    // Compile condition
-    compileExpression(cf, lexer, token);
-    eat(lexer, token, TOKEN_RPAREN);
-
-    // Emit conditional jump to exit
-    size_t exitJump = cf.chunk.code.size();
-    cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, lineNum);
-    cf.chunk.writeInt(0, lineNum); // placeholder
-
-    eat(lexer, token, TOKEN_LBRACE);
-
-    std::vector<std::string> body;
-    parseBodyStatements(lexer, token, body);
-    compileFunctionBody(cf, body);
-
-    // Loop back
-    size_t afterBody = cf.chunk.code.size();
-    cf.chunk.writeOp(OpCode::OP_LOOP, lineNum);
-    int32_t loopOffset = static_cast<int32_t>(loopStart) - static_cast<int32_t>(afterBody + 5);
-    cf.chunk.writeInt(static_cast<uint32_t>(loopOffset), lineNum);
-
-    // Patch exit jump to skip past the OP_LOOP instruction
-    cf.chunk.patchJump(exitJump + 1, afterBody + 5);
-}
-
-void BytecodeCompiler::compileForStatement(CompiledFunction& cf, Lexer& lexer, Token& token, int lineNum) {
-    eat(lexer, token, TOKEN_FOR);
-    eat(lexer, token, TOKEN_LPAREN);
-
-    // Parse init statement
-    std::string init;
-    while (token.type != TOKEN_SEMICOLON && token.type != TOKEN_EOF) {
-        init += token.value + " ";
-        token = lexer.nextToken();
-        skipWhitespace(lexer, token);
-    }
-    eat(lexer, token, TOKEN_SEMICOLON);
-
-    // Parse condition
-    std::string condition;
-    while (token.type != TOKEN_SEMICOLON && token.type != TOKEN_EOF) {
-        condition += token.value + " ";
-        token = lexer.nextToken();
-        skipWhitespace(lexer, token);
-    }
-    eat(lexer, token, TOKEN_SEMICOLON);
-
-    // Parse increment
-    std::string iter;
-    while (token.type != TOKEN_RPAREN && token.type != TOKEN_EOF) {
-        iter += token.value + " ";
-        token = lexer.nextToken();
-        skipWhitespace(lexer, token);
-    }
-    eat(lexer, token, TOKEN_RPAREN);
-
-
-    // Compile init
-    if (!init.empty()) {
-        Lexer initLexer(init);
-        Token initToken = initLexer.nextToken();
-        skipWhitespace(initLexer, initToken);
-        if (initToken.type == TOKEN_IDENTIFIER) {
-            std::string varName = initToken.value;
-            initToken = initLexer.nextToken();
-            skipWhitespace(initLexer, initToken);
-            if (initToken.type == TOKEN_EQUAL) {
-                compileAssignment(cf, initLexer, initToken, varName);
-            }
+        if (!libMgr.hasLibrary(resolvedLib)) {
+            ErrorReporter::reportSimple("CompileError",
+                "Unknown library prefix '" + libPrefix + "' in call '" + name + "'",
+                "Use 'import ...' to import the library first, or check the library name");
+            return false;
         }
-    }
-
-    size_t loopStart = cf.chunk.code.size();
-
-    // Compile condition
-    if (!condition.empty()) {
-        Lexer condLexer(condition);
-        Token condToken = condLexer.nextToken();
-        skipWhitespace(condLexer, condToken);
-        compileExpression(cf, condLexer, condToken);
-    } else {
-        cf.chunk.writeOp(OpCode::OP_TRUE, lineNum);
-    }
-
-    size_t exitJump = cf.chunk.code.size();
-    cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, lineNum);
-    cf.chunk.writeInt(0, lineNum);
-
-    eat(lexer, token, TOKEN_LBRACE);
-
-    std::vector<std::string> body;
-    parseBodyStatements(lexer, token, body);
-    compileFunctionBody(cf, body);
-
-    // Compile increment
-    if (!iter.empty()) {
-        Lexer iterLexer(iter);
-        Token iterToken = iterLexer.nextToken();
-        skipWhitespace(iterLexer, iterToken);
-        if (iterToken.type == TOKEN_IDENTIFIER) {
-            std::string varName = iterToken.value;
-            iterToken = iterLexer.nextToken();
-            skipWhitespace(iterLexer, iterToken);
-            if (iterToken.type == TOKEN_EQUAL) {
-                compileAssignment(cf, iterLexer, iterToken, varName);
-            }
+        if (!libMgr.isImported(resolvedLib)) {
+            std::string extPath = libMgr.getSystemFuncExternalPath(funcOnly);
+            if (extPath.empty()) extPath = resolvedLib;
+            std::string shortName = LibraryManager::getLastSegment(extPath);
+            ErrorReporter::reportSimple("CompileError",
+                "Library '" + resolvedLib + "' is not imported. Call: '" + name + "'",
+                "Use: import " + extPath + "\n"
+                "  Then: " + shortName + "." + funcOnly + "(...)");
+            return false;
         }
+        if (!libMgr.hasSystemFunction(resolvedLib, funcOnly)) {
+            ErrorReporter::reportSimple("CompileError",
+                "Function '" + funcOnly + "' not found in library '" + resolvedLib + "'",
+                "Check the function name or import the correct library");
+            return false;
+        }
+        return true;
     }
 
-    // Loop back
-    size_t afterBody = cf.chunk.code.size();
-    cf.chunk.writeOp(OpCode::OP_LOOP, lineNum);
-    int32_t loopOffset = static_cast<int32_t>(loopStart) - static_cast<int32_t>(afterBody + 5);
-    cf.chunk.writeInt(static_cast<uint32_t>(loopOffset), lineNum);
+    if (userFuncNames.find(name) != userFuncNames.end()) {
+        return true;
+    }
 
-    cf.chunk.patchJump(exitJump + 1, afterBody + 5);
+    std::string blockedLib = libMgr.getBlockedLibName(name);
+    if (!blockedLib.empty()) {
+        std::string shortName = LibraryManager::getLastSegment(blockedLib);
+        ErrorReporter::reportSimple("CompileError",
+            "Function '" + name + "' is from the '" + blockedLib + "' library",
+            "You must call it with the library prefix: '" + shortName + "." + name + "(...)'");
+        return false;
+    }
+
+    std::string sysLibPath = libMgr.getSystemFuncExternalPath(name);
+    if (!sysLibPath.empty()) {
+        std::string shortName = LibraryManager::getLastSegment(sysLibPath);
+        ErrorReporter::reportSimple("CompileError",
+            "Function '" + name + "' requires importing a library first",
+            "Use: import " + sysLibPath + "\n"
+            "  Then: " + shortName + "." + name + "(...)\n"
+            "  Or with alias: import " + sysLibPath + " -> my_alias\n"
+            "  Then: my_alias." + name + "(...)");
+        return false;
+    }
+
+    ErrorReporter::reportSimple("CompileError",
+        "Undefined function: " + name,
+        "Make sure the function is defined or the required library is imported");
+    return false;
 }
 
 std::string BytecodeCompiler::typeStr(Value::Type t) {
@@ -746,99 +744,83 @@ void BytecodeCompiler::typeError(const std::string& msg) {
     throw std::runtime_error("TypeError: " + msg);
 }
 
-void BytecodeCompiler::compileAssignment(CompiledFunction& cf, Lexer& lexer, Token& token, const std::string& varName) {
-    eat(lexer, token, TOKEN_EQUAL);
-    Value::Type rhsType = compileExpression(cf, lexer, token);
-    varTypes[varName] = rhsType;
-    int nameIdx = cf.chunk.addConstantString(varName);
-    cf.chunk.writeOp(OpCode::OP_DEF_GLOBAL, 0);
-    cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
-}
-
-Value::Type BytecodeCompiler::compileExpression(CompiledFunction& cf, Lexer& lexer, Token& token) {
-    Value::Type left = compileCompare(cf, lexer, token);
-
-    while (token.type == TOKEN_AND || token.type == TOKEN_OR) {
-        TokenT opType = token.type;
-        eat(lexer, token, opType);
-
-        if (opType == TOKEN_AND) {
-            size_t jumpInstr = cf.chunk.code.size();
-            cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, 0);
-            cf.chunk.writeInt(0, 0);
-            compileCompare(cf, lexer, token);
-            size_t endJump = cf.chunk.code.size();
-            cf.chunk.writeOp(OpCode::OP_JMP, 0);
-            cf.chunk.writeInt(0, 0);
-            size_t afterJump = cf.chunk.code.size();
-            cf.chunk.patchJump(jumpInstr + 1, afterJump);
-            cf.chunk.patchJump(endJump + 1, cf.chunk.code.size());
-        } else if (opType == TOKEN_OR) {
-            size_t jumpInstr = cf.chunk.code.size();
-            cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, 0);
-            cf.chunk.writeInt(0, 0);
-            cf.chunk.writeOp(OpCode::OP_TRUE, 0);
-            size_t endJump = cf.chunk.code.size();
-            cf.chunk.writeOp(OpCode::OP_JMP, 0);
-            cf.chunk.writeInt(0, 0);
-            size_t afterJump = cf.chunk.code.size();
-            cf.chunk.patchJump(jumpInstr + 1, afterJump);
-            compileCompare(cf, lexer, token);
-            cf.chunk.patchJump(endJump + 1, cf.chunk.code.size());
-        }
-        left = Value::Type::Int;
+Value::Type BytecodeCompiler::compileExpr(CompiledFunction& cf, Expr* expr) {
+    if (auto* n = dynamic_cast<NumberExpr*>(expr)) {
+        int idx = cf.chunk.addConstant(Value(n->value));
+        cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
+        cf.chunk.writeInt(static_cast<uint32_t>(idx), 0);
+        return Value::Type::Int;
     }
-    return left;
-}
-
-Value::Type BytecodeCompiler::compileCompare(CompiledFunction& cf, Lexer& lexer, Token& token) {
-    Value::Type left = compileAdd(cf, lexer, token);
-
-    while (token.type == TOKEN_EQ || token.type == TOKEN_NE ||
-           token.type == TOKEN_GT || token.type == TOKEN_LT ||
-           token.type == TOKEN_GE || token.type == TOKEN_LE) {
-        TokenT opType = token.type;
-        eat(lexer, token, opType);
-        Value::Type right = compileAdd(cf, lexer, token);
-
+    if (auto* d = dynamic_cast<DoubleExpr*>(expr)) {
+        int idx = cf.chunk.addConstant(Value(d->value));
+        cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
+        cf.chunk.writeInt(static_cast<uint32_t>(idx), 0);
+        return Value::Type::Double;
+    }
+    if (auto* s = dynamic_cast<StringExpr*>(expr)) {
+        int idx = cf.chunk.addConstantString(s->value);
+        cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
+        cf.chunk.writeInt(static_cast<uint32_t>(idx), 0);
+        return Value::Type::String;
+    }
+    if (auto* id = dynamic_cast<IdentifierExpr*>(expr)) {
+        int nameIdx = cf.chunk.addConstantString(id->name);
+        cf.chunk.writeOp(OpCode::OP_GET_GLOBAL, 0);
+        cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
+        auto it = varTypes.find(id->name);
+        if (it != varTypes.end()) return it->second;
+        return Value::Type::Unknown;
+    }
+    if (auto* input = dynamic_cast<InputExpr*>(expr)) {
+        cf.chunk.writeOp(OpCode::OP_INPUT, 0);
+        return Value::Type::Unknown;
+    }
+    if (auto* cast = dynamic_cast<CastExpr*>(expr)) {
+        compileExpr(cf, cast->expr.get());
+        cf.chunk.writeOp(
+            (cast->castType == CastType::Int) ? OpCode::OP_CAST_INT : OpCode::OP_CAST_DOUBLE,
+            0
+        );
+        return (cast->castType == CastType::Int) ? Value::Type::Int : Value::Type::Double;
+    }
+    if (auto* arr = dynamic_cast<ArrayExpr*>(expr)) {
+        int count = 0;
+        for (const auto& elem : arr->elements) {
+            compileExpr(cf, elem.get());
+            count++;
+        }
+        cf.chunk.writeOp(OpCode::OP_ARRAY, 0);
+        cf.chunk.writeByte(static_cast<uint8_t>(count), 0);
+        return Value::Type::Array;
+    }
+    if (auto* idx = dynamic_cast<IndexExpr*>(expr)) {
+        compileExpr(cf, idx->arrayExpr.get());
+        compileExpr(cf, idx->indexExpr.get());
+        cf.chunk.writeOp(OpCode::OP_INDEX_GET, 0);
+        return Value::Type::Unknown;
+    }
+    if (auto* call = dynamic_cast<CallExpr*>(expr)) {
+        if (!validateCall(call->funcName)) {
+            throw std::runtime_error(""); // Error already reported via ErrorReporter
+        }
+        for (const auto& arg : call->args) {
+            compileExpr(cf, arg.get());
+        }
+        int nameIdx = cf.chunk.addConstantString(call->funcName);
+        cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
+        cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
+        cf.chunk.writeOp(OpCode::OP_CALL, 0);
+        cf.chunk.writeByte(static_cast<uint8_t>(call->args.size()), 0);
+        return Value::Type::Unknown;
+    }
+    if (auto* bin = dynamic_cast<BinaryExpr*>(expr)) {
+        Value::Type left = compileExpr(cf, bin->left.get());
+        Value::Type right = compileExpr(cf, bin->right.get());
         if (left != Value::Type::Unknown && right != Value::Type::Unknown &&
             left != Value::Type::Void && right != Value::Type::Void) {
             if ((left == Value::Type::Double && right == Value::Type::Int) ||
                 (left == Value::Type::Int && right == Value::Type::Double)) {
-                typeError("Cannot compare " + typeStr(left) + " and " + typeStr(right)
-                    + " without explicit cast (use int() or double())");
-            }
-        }
-
-        OpCode opcode;
-        switch (opType) {
-        case TOKEN_EQ: opcode = OpCode::OP_EQ; break;
-        case TOKEN_NE: opcode = OpCode::OP_NE; break;
-        case TOKEN_GT: opcode = OpCode::OP_GT; break;
-        case TOKEN_LT: opcode = OpCode::OP_LT; break;
-        case TOKEN_GE: opcode = OpCode::OP_GE; break;
-        case TOKEN_LE: opcode = OpCode::OP_LE; break;
-        default: throw std::runtime_error("Unexpected comparison operator");
-        }
-        cf.chunk.writeOp(opcode, 0);
-        left = Value::Type::Int;
-    }
-    return left;
-}
-
-Value::Type BytecodeCompiler::compileAdd(CompiledFunction& cf, Lexer& lexer, Token& token) {
-    Value::Type left = compileMul(cf, lexer, token);
-
-    while (token.type == TOKEN_PLUS || token.type == TOKEN_MINUS) {
-        TokenT opType = token.type;
-        eat(lexer, token, opType);
-        Value::Type right = compileMul(cf, lexer, token);
-
-        if (left != Value::Type::Unknown && right != Value::Type::Unknown &&
-            left != Value::Type::Void && right != Value::Type::Void) {
-            if ((left == Value::Type::Double && right == Value::Type::Int) ||
-                (left == Value::Type::Int && right == Value::Type::Double)) {
-                typeError("Cannot " + std::string(opType == TOKEN_PLUS ? "add" : "subtract") + " "
+                typeError("Cannot " + std::string(bin->op == TOKEN_PLUS ? "add" : "subtract") + " "
                     + typeStr(left) + " and " + typeStr(right)
                     + " without explicit cast (use int() or double())");
             }
@@ -849,224 +831,67 @@ Value::Type BytecodeCompiler::compileAdd(CompiledFunction& cf, Lexer& lexer, Tok
                 typeError("Cannot add " + typeStr(left) + " and string");
             }
         }
-
-        if (opType == TOKEN_PLUS) {
-            cf.chunk.writeOp(OpCode::OP_ADD, 0);
-        } else {
-            cf.chunk.writeOp(OpCode::OP_SUB, 0);
-        }
-
-        if (left == Value::Type::Double || right == Value::Type::Double) {
-            left = Value::Type::Double;
-        } else if (left == Value::Type::Int && right == Value::Type::Int) {
-            left = Value::Type::Int;
-        } else if (left == Value::Type::String && right == Value::Type::String) {
-            left = Value::Type::String;
-        } else {
-            left = Value::Type::Unknown;
-        }
-    }
-    return left;
-}
-
-Value::Type BytecodeCompiler::compileMul(CompiledFunction& cf, Lexer& lexer, Token& token) {
-    return compileUnary(cf, lexer, token);
-}
-
-Value::Type BytecodeCompiler::compileUnary(CompiledFunction& cf, Lexer& lexer, Token& token) {
-    if (token.type == TOKEN_MINUS) {
-        eat(lexer, token, TOKEN_MINUS);
-        Value::Type t = compilePrimary(cf, lexer, token);
-        cf.chunk.writeOp(OpCode::OP_NEGATE, 0);
-        return t;
-    } else if (token.type == TOKEN_INT_CAST || token.type == TOKEN_DOUBLE_CAST) {
-        CastType castType = (token.type == TOKEN_INT_CAST) ? CastType::Int : CastType::Double;
-        compileCastExpr(cf, lexer, token, castType);
-        return (castType == CastType::Int) ? Value::Type::Int : Value::Type::Double;
-    } else if (token.type == TOKEN_INPUT) {
-        eat(lexer, token, TOKEN_INPUT);
-        cf.chunk.writeOp(OpCode::OP_INPUT, 0);
+        cf.chunk.writeOp((bin->op == TOKEN_PLUS) ? OpCode::OP_ADD : OpCode::OP_SUB, 0);
+        if (left == Value::Type::Double || right == Value::Type::Double)
+            return Value::Type::Double;
+        if (left == Value::Type::Int && right == Value::Type::Int)
+            return Value::Type::Int;
+        if (left == Value::Type::String && right == Value::Type::String)
+            return Value::Type::String;
         return Value::Type::Unknown;
-    } else {
-        return compilePrimary(cf, lexer, token);
     }
-}
-
-void BytecodeCompiler::compileCastExpr(CompiledFunction& cf, Lexer& lexer, Token& token, CastType castType) {
-    TokenT expected = (castType == CastType::Int) ? TOKEN_INT_CAST : TOKEN_DOUBLE_CAST;
-    eat(lexer, token, expected);
-    eat(lexer, token, TOKEN_LPAREN);
-    compileExpression(cf, lexer, token);
-    eat(lexer, token, TOKEN_RPAREN);
-    cf.chunk.writeOp(
-        (castType == CastType::Int) ? OpCode::OP_CAST_INT : OpCode::OP_CAST_DOUBLE,
-        0
-    );
-}
-
-Value::Type BytecodeCompiler::compilePrimary(CompiledFunction& cf, Lexer& lexer, Token& token) {
-    skipWhitespace(lexer, token);
-
-    if (token.type == TOKEN_NUMBER) {
-        int val = std::stoi(token.value);
-        int idx = cf.chunk.addConstant(Value(val));
-        cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
-        cf.chunk.writeInt(static_cast<uint32_t>(idx), 0);
-        eat(lexer, token, TOKEN_NUMBER);
+    if (auto* cmp = dynamic_cast<CompareExpr*>(expr)) {
+        Value::Type left = compileExpr(cf, cmp->left.get());
+        Value::Type right = compileExpr(cf, cmp->right.get());
+        if (left != Value::Type::Unknown && right != Value::Type::Unknown &&
+            left != Value::Type::Void && right != Value::Type::Void) {
+            if ((left == Value::Type::Double && right == Value::Type::Int) ||
+                (left == Value::Type::Int && right == Value::Type::Double)) {
+                typeError("Cannot compare " + typeStr(left) + " and " + typeStr(right)
+                    + " without explicit cast (use int() or double())");
+            }
+        }
+        OpCode opcode;
+        switch (cmp->op) {
+        case CompareType::EQ: opcode = OpCode::OP_EQ; break;
+        case CompareType::NE: opcode = OpCode::OP_NE; break;
+        case CompareType::GT: opcode = OpCode::OP_GT; break;
+        case CompareType::LT: opcode = OpCode::OP_LT; break;
+        case CompareType::GE: opcode = OpCode::OP_GE; break;
+        case CompareType::LE: opcode = OpCode::OP_LE; break;
+        }
+        cf.chunk.writeOp(opcode, 0);
         return Value::Type::Int;
-    } else if (token.type == TOKEN_DOUBLE_NUM) {
-        double val = std::stod(token.value);
-        int idx = cf.chunk.addConstant(Value(val));
-        cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
-        cf.chunk.writeInt(static_cast<uint32_t>(idx), 0);
-        eat(lexer, token, TOKEN_DOUBLE_NUM);
-        return Value::Type::Double;
-    } else if (token.type == TOKEN_STRING) {
-        int idx = cf.chunk.addConstantString(token.value);
-        cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
-        cf.chunk.writeInt(static_cast<uint32_t>(idx), 0);
-        eat(lexer, token, TOKEN_STRING);
-        return Value::Type::String;
-    } else if (token.type == TOKEN_IDENTIFIER) {
-        std::string identName = token.value;
-        eat(lexer, token, TOKEN_IDENTIFIER);
-
-        if (token.type == TOKEN_LPAREN) {
-            compileCall(cf, lexer, token, identName);
-            return Value::Type::Unknown;
-        } else if (token.type == TOKEN_LBRACKET) {
-            int nameIdx = cf.chunk.addConstantString(identName);
-            cf.chunk.writeOp(OpCode::OP_GET_GLOBAL, 0);
-            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
-            eat(lexer, token, TOKEN_LBRACKET);
-            compileExpression(cf, lexer, token);
-            eat(lexer, token, TOKEN_RBRACKET);
-            cf.chunk.writeOp(OpCode::OP_INDEX_GET, 0);
-            return Value::Type::Unknown;
+    }
+    if (auto* cond = dynamic_cast<ConditionExpr*>(expr)) {
+        compileExpr(cf, cond->left.get());
+        if (cond->op == TOKEN_AND) {
+            size_t jumpInstr = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, 0);
+            cf.chunk.writeInt(0, 0);
+            compileExpr(cf, cond->right.get());
+            size_t endJump = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_JMP, 0);
+            cf.chunk.writeInt(0, 0);
+            size_t afterJump = cf.chunk.code.size();
+            cf.chunk.patchJump(jumpInstr + 1, afterJump);
+            cf.chunk.patchJump(endJump + 1, cf.chunk.code.size());
         } else {
-            int nameIdx = cf.chunk.addConstantString(identName);
-            cf.chunk.writeOp(OpCode::OP_GET_GLOBAL, 0);
-            cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
-            auto it = varTypes.find(identName);
-            if (it != varTypes.end()) return it->second;
-            return Value::Type::Unknown;
+            size_t jumpInstr = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_JMP_IF_FALSE, 0);
+            cf.chunk.writeInt(0, 0);
+            cf.chunk.writeOp(OpCode::OP_TRUE, 0);
+            size_t endJump = cf.chunk.code.size();
+            cf.chunk.writeOp(OpCode::OP_JMP, 0);
+            cf.chunk.writeInt(0, 0);
+            size_t afterJump = cf.chunk.code.size();
+            cf.chunk.patchJump(jumpInstr + 1, afterJump);
+            compileExpr(cf, cond->right.get());
+            cf.chunk.patchJump(endJump + 1, cf.chunk.code.size());
         }
-    } else if (token.type == TOKEN_LBRACKET) {
-        eat(lexer, token, TOKEN_LBRACKET);
-        int elemCount = 0;
-        while (token.type != TOKEN_RBRACKET && token.type != TOKEN_EOF) {
-            compileExpression(cf, lexer, token);
-            elemCount++;
-            if (token.type == TOKEN_COMMA) {
-                eat(lexer, token, TOKEN_COMMA);
-            }
-        }
-        eat(lexer, token, TOKEN_RBRACKET);
-        cf.chunk.writeOp(OpCode::OP_ARRAY, 0);
-        cf.chunk.writeByte(static_cast<uint8_t>(elemCount), 0);
-        return Value::Type::Array;
-    } else if (token.type == TOKEN_LPAREN) {
-        eat(lexer, token, TOKEN_LPAREN);
-        Value::Type t = compileExpression(cf, lexer, token);
-        eat(lexer, token, TOKEN_RPAREN);
-        return t;
-    } else {
-        throw std::runtime_error("Compile error: unexpected token '" + token.value + "' in expression");
+        return Value::Type::Int;
     }
-}
-
-void BytecodeCompiler::compileCall(CompiledFunction& cf, Lexer& lexer, Token& token, const std::string& funcName) {
-    eat(lexer, token, TOKEN_LPAREN);
-
-    int argCount = 0;
-    while (token.type != TOKEN_RPAREN && token.type != TOKEN_EOF) {
-        compileExpression(cf, lexer, token);
-        argCount++;
-        if (token.type == TOKEN_COMMA) {
-            eat(lexer, token, TOKEN_COMMA);
-            skipWhitespace(lexer, token);
-        }
-    }
-    eat(lexer, token, TOKEN_RPAREN);
-
-    // Push function name as constant
-    int nameIdx = cf.chunk.addConstantString(funcName);
-    cf.chunk.writeOp(OpCode::OP_CONSTANT, 0);
-    cf.chunk.writeInt(static_cast<uint32_t>(nameIdx), 0);
-
-    cf.chunk.writeOp(OpCode::OP_CALL, 0);
-    cf.chunk.writeByte(static_cast<uint8_t>(argCount), 0);
-}
-
-void BytecodeCompiler::parseBodyStatements(Lexer& lexer, Token& token, std::vector<std::string>& body) {
-    while (token.type != TOKEN_RBRACE && token.type != TOKEN_EOF) {
-        std::string stmt = parseSingleStmt(lexer, token);
-        if (!stmt.empty()) {
-            body.push_back(stmt);
-        }
-        skipWhitespace(lexer, token);
-    }
-    if (token.type == TOKEN_RBRACE) {
-        eat(lexer, token, TOKEN_RBRACE);
-    }
-}
-
-std::string BytecodeCompiler::parseSingleStmt(Lexer& lexer, Token& token) {
-    skipWhitespace(lexer, token);
-
-    if (token.type == TOKEN_EOF || token.type == TOKEN_RBRACE) {
-        return "";
-    }
-
-    std::string stmt;
-
-    // Handle if/while/for blocks
-    if (token.type == TOKEN_IF || token.type == TOKEN_WHILE || token.type == TOKEN_FOR) {
-        int braceDepth = 0;
-        bool insideBlock = false;
-        while (token.type != TOKEN_EOF) {
-            if (token.type == TOKEN_STRING) {
-                stmt += "\"" + token.value + "\"";
-            } else {
-                stmt += token.value + " ";
-            }
-            if (token.type == TOKEN_LBRACE) {
-                insideBlock = true;
-                braceDepth++;
-            } else if (token.type == TOKEN_RBRACE && insideBlock) {
-                braceDepth--;
-                if (braceDepth == 0) {
-                    token = lexer.nextToken();
-                    skipWhitespace(lexer, token);
-                    break;
-                }
-            }
-            token = lexer.nextToken();
-            skipWhitespace(lexer, token);
-        }
-    } else {
-        while (token.type != TOKEN_EOF && token.type != TOKEN_NEWLINE && token.type != TOKEN_RBRACE) {
-            if (token.type == TOKEN_STRING) {
-                stmt += "\"" + token.value + "\"";
-            } else {
-                stmt += token.value + " ";
-            }
-            token = lexer.nextToken();
-            skipWhitespace(lexer, token);
-        }
-        if (token.type == TOKEN_NEWLINE) {
-            token = lexer.nextToken();
-        }
-    }
-
-    size_t start = stmt.find_first_not_of(" \t\n\r");
-    size_t end = stmt.find_last_not_of(" \t\n\r");
-    if (start != std::string::npos && end != std::string::npos) {
-        stmt = stmt.substr(start, end - start + 1);
-    } else {
-        stmt.clear();
-    }
-    return stmt;
+    throw std::runtime_error(std::string("BytecodeCompiler: unsupported expression type: ") + typeid(*expr).name());
 }
 
 // ============================================================
@@ -1227,6 +1052,13 @@ void VM::run() {
             Value retVal = Value();
             if (!stack.empty()) {
                 retVal = pop();
+            }
+            // Restore globals shadowed by this frame's parameters
+            if (!frames.empty()) {
+                CallFrame& curFrame = frames.back();
+                for (const auto& [name, val] : curFrame.savedGlobals) {
+                    globals[name] = val;
+                }
             }
             frames.pop_back();
             if (!frames.empty()) {
@@ -1547,17 +1379,21 @@ void VM::run() {
                     args[i] = pop();
                 }
 
-                // Set parameters as global variables (matching existing interpreter behavior)
-                for (size_t i = 0; i < func.parameters.size(); i++) {
-                    globals[func.parameters[i].name] = args[i];
-                }
-
                 // Create new frame to execute function
                 frames.push_back(CallFrame{});
                 CallFrame& newFrame = frames.back();
                 newFrame.function = &func;
                 newFrame.ip = 0;
                 newFrame.locals.resize(func.localCount);
+
+                // Save and set parameters as global variables
+                for (size_t i = 0; i < func.parameters.size(); i++) {
+                    auto it = globals.find(func.parameters[i].name);
+                    if (it != globals.end()) {
+                        newFrame.savedGlobals[func.parameters[i].name] = it->second;
+                    }
+                    globals[func.parameters[i].name] = args[i];
+                }
             } else {
                 Interpreter sys;
                 if (sys.isSystemFunction(fnName)) {

@@ -5,11 +5,12 @@
 #include "../../libs/system/fs/SystemFunctionsFile.h"
 #include "../../libs/system/math/SystemFunctionsMath.h"
 #include "../../libs/system/io/util/SystemFunctionUtil.h"
+#include "../../libs/system/api/socket/SystemFunctionsSocket.h"
 
 void initSystemLibraries() {
     auto& libMgr = LibraryManager::getInstance();
 
-    // æ³¨å†Œ random åº“
+    // ×¢²á random ¿â
     libMgr.registerLibrary("random");
     libMgr.registerLibraryName("random", "fox.std.random");
     libMgr.registerSystemFunction("random", "random", [](const std::vector<Value>& args) -> Value {
@@ -17,7 +18,7 @@ void initSystemLibraries() {
         return random.RandomStart(args);
         });
 
-    // æ³¨å†Œ file åº“ï¼ˆå¤–éƒ¨è°ƒç”¨è·¯å¾„: fox.sys.io.fsï¼‰
+    // ×¢²á file ¿â£¨Íâ²¿µ÷ÓÃÂ·¾¶: fox.sys.io.fs£©
     libMgr.registerLibrary("file");
     libMgr.registerLibraryName("file", "fox.sys.io.fs");
     libMgr.registerSystemFunction("file", "file_open", [](const std::vector<Value>& args) -> Value {
@@ -89,7 +90,29 @@ void initSystemLibraries() {
         return util.IntChangeDouble(args);
         });
 
+    libMgr.registerLibrary("socket");
+    libMgr.registerSystemFunction("socket", "socket_create", [](const std::vector<Value>& args) -> Value {
+        Socket sock;
+        return sock.socket_create(args);
+        });
+    libMgr.registerSystemFunction("socket", "socket_connect", [](const std::vector<Value>& args) -> Value {
+        Socket sock;
+        return sock.socket_connect(args);
+        });
+    libMgr.registerSystemFunction("socket", "socket_send", [](const std::vector<Value>& args) -> Value {
+        Socket sock;
+        return sock.socket_send(args);
+        });
+    libMgr.registerSystemFunction("socket", "socket_recv", [](const std::vector<Value>& args) -> Value {
+        Socket sock;
+        return sock.socket_recv(args);
+        });
+    libMgr.registerSystemFunction("socket", "socket_close", [](const std::vector<Value>& args) -> Value {
+        Socket sock;
+        return sock.socket_close(args);
+        });
+    
     if (isOutInfo) {
-        std::cout << "[ç³»ç»Ÿ] ç³»ç»Ÿåº“åˆå§‹åŒ–å®Œæˆ" << std::endl;
+        std::cout << "[ÏµÍ³] ÏµÍ³¿â³õÊ¼»¯Íê³É" << std::endl;
     }
 }

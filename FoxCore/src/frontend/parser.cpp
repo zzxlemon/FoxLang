@@ -8,8 +8,40 @@ static std::string makeParseError(const Token& token, const std::string& message
     return "Syntax error: " + token.position() + ": " + message;
 }
 
+static const char* tokenTypeName(TokenT type) {
+    switch (type) {
+    case TOKEN_EOF: return "end of file";
+    case TOKEN_NEWLINE: return "newline";
+    case TOKEN_IDENTIFIER: return "identifier";
+    case TOKEN_NUMBER: return "number";
+    case TOKEN_DOUBLE_NUM: return "double";
+    case TOKEN_STRING: return "string";
+    case TOKEN_PLUS: return "'+'";
+    case TOKEN_MINUS: return "'-'";
+    case TOKEN_EQUAL: return "'='";
+    case TOKEN_LPAREN: return "'('";
+    case TOKEN_RPAREN: return "')'";
+    case TOKEN_LBRACE: return "'{'";
+    case TOKEN_RBRACE: return "'}'";
+    case TOKEN_LBRACKET: return "'['";
+    case TOKEN_RBRACKET: return "']'";
+    case TOKEN_COMMA: return "','";
+    case TOKEN_SEMICOLON: return "';'";
+    case TOKEN_DOT: return "'.'";
+    case TOKEN_ARROW: return "'->'";
+    case TOKEN_LEFT_ARROW: return "'<-'";
+    case TOKEN_GT: return "'>'";
+    case TOKEN_LT: return "'<'";
+    case TOKEN_EQ: return "'=='";
+    case TOKEN_NE: return "'!='";
+    case TOKEN_GE: return "'>='";
+    case TOKEN_LE: return "'<='";
+    default: return "token";
+    }
+}
+
 void Parser::skipWhitespace(Lexer& lexer, Token& currentToken) {
-    // ‰ªÖË∑≥ËøáÁ©∫Ê†º/Âà∂Ë°®Á¨¶/ÂõûËΩ¶Ôºå‰∏çË∑≥ËøáÊç¢Ë°å/EOF/ÊúâÊïàToken
+    // ΩˆÃ¯π˝ø’∏Ò/÷∆±Ì∑˚/ªÿ≥µ£¨≤ªÃ¯π˝ªª––/EOF/”––ßToken
     while (currentToken.type != TOKEN_EOF && !currentToken.value.empty()
         && isspace(static_cast<unsigned char>(currentToken.value[0]))
         && currentToken.value[0] != '\n') {
@@ -20,7 +52,7 @@ void Parser::skipWhitespace(Lexer& lexer, Token& currentToken) {
 void Parser::eat(Lexer& lexer, Token& currentToken, TokenT expectedType) {
     if (currentToken.type == expectedType) {
         currentToken = lexer.nextToken();
-        skipWhitespace(lexer, currentToken); // Ë∑≥ËøáÁ©∫Ê†º
+        skipWhitespace(lexer, currentToken); // Ã¯π˝ø’∏Ò
     }
     else {
         throw std::runtime_error(makeParseError(currentToken,
@@ -53,6 +85,15 @@ std::unique_ptr<Expr> Parser::parsePrimary(Lexer& lexer, Token& currentToken) {
 
     if (token.type == TOKEN_IDENTIFIER) {
         eat(lexer, currentToken, TOKEN_IDENTIFIER);
+        std::string fullName = token.value;
+
+        // Handle dot notation: lib.func or lib.func(...)
+        while (currentToken.type == TOKEN_DOT) {
+            eat(lexer, currentToken, TOKEN_DOT);
+            fullName += "." + currentToken.value;
+            eat(lexer, currentToken, TOKEN_IDENTIFIER);
+        }
+
         std::unique_ptr<Expr> baseExpr;
         if (currentToken.type == TOKEN_LPAREN) {
             eat(lexer, currentToken, TOKEN_LPAREN);
@@ -65,10 +106,10 @@ std::unique_ptr<Expr> Parser::parsePrimary(Lexer& lexer, Token& currentToken) {
                 }
             }
             eat(lexer, currentToken, TOKEN_RPAREN);
-            baseExpr = std::unique_ptr<CallExpr>(new CallExpr(token.value, std::move(args)));
+            baseExpr = std::unique_ptr<CallExpr>(new CallExpr(fullName, std::move(args)));
         }
         else {
-            baseExpr = std::unique_ptr<IdentifierExpr>(new IdentifierExpr(token.value));
+            baseExpr = std::unique_ptr<IdentifierExpr>(new IdentifierExpr(fullName));
         }
         return parsePostfix(lexer, currentToken, std::move(baseExpr));
     }
@@ -110,7 +151,7 @@ std::unique_ptr<Expr> Parser::parsePrimary(Lexer& lexer, Token& currentToken) {
     }
 }
 
-// Â§ÑÁêÜÂä†Âáè‰ºòÂÖàÁ∫ßÔºà‰Ωé‰ºòÂÖàÁ∫ß‰∫é‰πòÈô§Ôºâ
+// ¥¶¿Ìº”ºı”≈œ»º∂£®µÕ”≈œ»º∂”⁄≥À≥˝£©
 std::unique_ptr<Expr> Parser::parseAdd(Lexer& lexer, Token& currentToken) {
     auto left = parsePrimary(lexer, currentToken);
     while (currentToken.type == TOKEN_PLUS || currentToken.type == TOKEN_MINUS) {
@@ -145,7 +186,7 @@ void Parser::parseAssignment(Lexer& lexer, Token& currentToken,
 
     if (isOutInfo) {
         Value& assigned = variables[varName];
-        std::cout << "[ÊâßË°å] ËµãÂÄºÂèòÈáèÔºö" << varName << " = ";
+        std::cout << "[÷¥––] ∏≥÷µ±‰¡ø£∫" << varName << " = ";
         switch (assigned.getType()) {
         case Value::Type::Int: std::cout << assigned.asInt(); break;
         case Value::Type::Double: std::cout << assigned.asDouble(); break;
@@ -176,11 +217,11 @@ void Parser::parsePrint(Lexer& lexer, Token& currentToken,
     // std::cout << std::endl;
 }
 
-void Parser::parseEnd(Lexer& lexer, Token& currentToken,
+void Parser::parseEndl(Lexer& lexer, Token& currentToken,
     std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
     skipWhitespace(lexer, currentToken);
-	eat(lexer, currentToken, TOKEN_END);
+	eat(lexer, currentToken, TOKEN_ENDL);
     std::cout << std::endl;
 }
 
@@ -207,17 +248,17 @@ Value Parser::parseRet(Lexer& lexer, Token& currentToken,
     Value retVal = expr->evaluate(variables, functions);
 
     if (isOutInfo) {
-        std::cout << "[ÊâßË°å] ËøîÂõûÂÄºÔºö" << retVal.asString() << std::endl;
+        std::cout << "[÷¥––] ∑µªÿ÷µ£∫" << retVal.asString() << std::endl;
     }
     return retVal;
 }
     
-// Ëß£ÊûêÂçïÊù°ËØ≠Âè•
+// Ω‚Œˆµ•Ãı”Ôæ‰
 std::string Parser::parseSingleStatement(Lexer& lexer, Token& currentToken) {
     std::string stmt;
     skipWhitespace(lexer, currentToken);
 
-    // ÊîØÊåÅ if/while ÂùóÊï¥‰ΩìËØªÂèñÔºàË∑®Ë°åÔºåÁõ¥Âà∞ÈÅáÂà∞ '}' Êàñ EOFÔºâ
+    // ÷ß≥÷ if/while øÈ’˚ÃÂ∂¡»°£®øÁ––£¨÷±µΩ”ˆµΩ '}' ªÚ EOF£©
     if (currentToken.type == TOKEN_IF || currentToken.type == TOKEN_WHILE || currentToken.type == TOKEN_FOR) {
         int braceDepth = 0;
         bool insideBlock = false;
@@ -274,14 +315,14 @@ std::string Parser::parseSingleStatement(Lexer& lexer, Token& currentToken) {
     return stmt;
 }
 
-// Ëß£ÊûêÂáΩÊï∞ÂÆö‰πâ
+// Ω‚Œˆ∫Ø ˝∂®“Â
 void Parser::parseFunction() {
     eat(funcLexer, funcCurrentToken, TOKEN_FUNC);
     std::string funcName = funcCurrentToken.value;
     eat(funcLexer, funcCurrentToken, TOKEN_IDENTIFIER);
     eat(funcLexer, funcCurrentToken, TOKEN_LPAREN);
 
-    // Ëß£ÊûêÂèÇÊï∞ÂàóË°®
+    // Ω‚Œˆ≤Œ ˝¡–±Ì
     std::vector<Parameter> params;
     while (funcCurrentToken.type != TOKEN_RPAREN && funcCurrentToken.type != TOKEN_EOF) {
         if (funcCurrentToken.type == TOKEN_NEWLINE || funcCurrentToken.value.empty()) {
@@ -290,17 +331,17 @@ void Parser::parseFunction() {
             continue;
         }
 
-        // ÂèÇÊï∞Âêç
+        // ≤Œ ˝√˚
         std::string paramName = funcCurrentToken.value;
         eat(funcLexer, funcCurrentToken, TOKEN_IDENTIFIER);
 
-        // ÊúüÊúõ <-
+        // ∆⁄Õ˚ <-
         if (funcCurrentToken.type != TOKEN_LEFT_ARROW) {
             throw std::runtime_error(makeParseError(funcCurrentToken, "Parameter definition expected '<-', got: " + funcCurrentToken.value));
         }
         eat(funcLexer, funcCurrentToken, TOKEN_LEFT_ARROW);
 
-        // ÂèÇÊï∞Á±ªÂûã
+        // ≤Œ ˝¿‡–Õ
         std::string paramType;
         if (funcCurrentToken.type == TOKEN_INT) {
             paramType = "int";
@@ -320,7 +361,7 @@ void Parser::parseFunction() {
 
         params.push_back({ paramName, paramType });
 
-        // Â§ÑÁêÜÈÄóÂè∑ÂàÜÈöî
+        // ¥¶¿Ì∂∫∫≈∑÷∏Ù
         if (funcCurrentToken.type == TOKEN_COMMA) {
             eat(funcLexer, funcCurrentToken, TOKEN_COMMA);
             skipWhitespace(funcLexer, funcCurrentToken);
@@ -328,27 +369,29 @@ void Parser::parseFunction() {
     }
 
     eat(funcLexer, funcCurrentToken, TOKEN_RPAREN);
-    eat(funcLexer, funcCurrentToken, TOKEN_ARROW);
-    // ËøîÂõûÁ±ªÂûã
-    std::string returnType;
-    if (funcCurrentToken.type == TOKEN_VOID) {
-        returnType = "void";
-        eat(funcLexer, funcCurrentToken, TOKEN_VOID);
-    }
-    else if (funcCurrentToken.type == TOKEN_INT) {
-        returnType = "int";
-        eat(funcLexer, funcCurrentToken, TOKEN_INT);
-    }
-    else if (funcCurrentToken.type == TOKEN_STRING_TYPE) {
-        returnType = "string";
-        eat(funcLexer, funcCurrentToken, TOKEN_STRING_TYPE);
-    }
-    else if (funcCurrentToken.type == TOKEN_DOUBLE) {
-        returnType = "double";
-        eat(funcLexer, funcCurrentToken, TOKEN_DOUBLE);
-    }
-    else {
-        throw std::runtime_error(makeParseError(funcCurrentToken, "Unsupported return type: " + funcCurrentToken.value));
+    // ∑µªÿ¿‡–Õ£®ø… °¬‘£¨ƒ¨»œŒ™ void£©
+    std::string returnType = "void";
+    if (funcCurrentToken.type == TOKEN_ARROW) {
+        eat(funcLexer, funcCurrentToken, TOKEN_ARROW);
+        if (funcCurrentToken.type == TOKEN_VOID) {
+            returnType = "void";
+            eat(funcLexer, funcCurrentToken, TOKEN_VOID);
+        }
+        else if (funcCurrentToken.type == TOKEN_INT) {
+            returnType = "int";
+            eat(funcLexer, funcCurrentToken, TOKEN_INT);
+        }
+        else if (funcCurrentToken.type == TOKEN_STRING_TYPE) {
+            returnType = "string";
+            eat(funcLexer, funcCurrentToken, TOKEN_STRING_TYPE);
+        }
+        else if (funcCurrentToken.type == TOKEN_DOUBLE) {
+            returnType = "double";
+            eat(funcLexer, funcCurrentToken, TOKEN_DOUBLE);
+        }
+        else {
+            throw std::runtime_error(makeParseError(funcCurrentToken, "Unsupported return type: " + funcCurrentToken.value));
+        }
     }
 
     if (funcCurrentToken.type == TOKEN_COLON) {
@@ -369,7 +412,7 @@ void Parser::parseFunction() {
         if (!stmt.empty()) {
             func.body.push_back(stmt);
             if (isOutInfo) {
-                std::cout << "[Ëß£Êûê] ÂáΩÊï∞‰ΩìËØ≠Âè•Ôºö" << stmt << std::endl;
+                std::cout << "[Ω‚Œˆ] ∫Ø ˝ÃÂ”Ôæ‰£∫" << stmt << std::endl;
             }
         }
         skipWhitespace(funcLexer, funcCurrentToken);
@@ -378,7 +421,7 @@ void Parser::parseFunction() {
     eat(funcLexer, funcCurrentToken, TOKEN_RBRACE);
     tempFunctions.push_back(func);
     if (isOutInfo) {
-        std::cout << "[Ëß£Êûê] ÂÆåÊàêÂáΩÊï∞Ôºö" << func.name << "ÔºåÂÖ±" << func.body.size() << "Êù°ËØ≠Âè•" << std::endl;
+        std::cout << "[Ω‚Œˆ] ÕÍ≥…∫Ø ˝£∫" << func.name << "£¨π≤" << func.body.size() << "Ãı”Ôæ‰" << std::endl;
     }
 }
 
@@ -407,107 +450,122 @@ void Parser::parseAllFunctions() {
     }
 }
 
-Value Parser::parseLine(const std::string& line,
-    std::unordered_map<std::string, Value>& variables,
-    std::unordered_map<std::string, Function>& functions) {
+// ============================================================
+// Handler-based line parsing (shared between interpreter & bytecode)
+// ============================================================
+void Parser::parseLine(const std::string& line, StmtHandler& handler) {
     Lexer lineLexer(line);
     Token currentToken = lineLexer.nextToken();
     skipWhitespace(lineLexer, currentToken);
 
+    if (currentToken.type == TOKEN_EOF) return;
+
     if (currentToken.type == TOKEN_IMPORT) {
-        parseImportStatement(lineLexer, currentToken, variables, functions);
-        return Value();
+        return;
     }
     if (currentToken.type == TOKEN_IF) {
         IfStatement ifStmt = parseIfStatement(lineLexer, currentToken);
-        executeIfStatement(ifStmt, variables, functions);
-        return Value();
+        handler.onIf(std::move(ifStmt));
+        return;
     }
     if (currentToken.type == TOKEN_FOR) {
         ForStatement forStmt = parseForStatement(lineLexer, currentToken);
-        executeForStatement(forStmt, variables, functions);
-        return Value();
+        handler.onFor(std::move(forStmt));
+        return;
     }
     if (currentToken.type == TOKEN_WHILE) {
         WhileStatement whileStmt = parseWhileStatement(lineLexer, currentToken);
-        executeWhileStatement(whileStmt, variables, functions);
-        return Value();
+        handler.onWhile(std::move(whileStmt));
+        return;
+    }
+    if (currentToken.type == TOKEN_FN) {
+        eat(lineLexer, currentToken, TOKEN_FN);
+        std::string labelName = currentToken.value;
+        eat(lineLexer, currentToken, TOKEN_IDENTIFIER);
+        eat(lineLexer, currentToken, TOKEN_COLON);
+        handler.onFnLabel(labelName);
+        return;
+    }
+    if (currentToken.type == TOKEN_GOTO) {
+        eat(lineLexer, currentToken, TOKEN_GOTO);
+        std::string labelName = currentToken.value;
+        eat(lineLexer, currentToken, TOKEN_IDENTIFIER);
+        handler.onGoto(labelName);
+        return;
     }
     if (currentToken.type == TOKEN_INPUT) {
-        parseInputStatement(lineLexer, currentToken, variables, functions);
-        return Value();
+        eat(lineLexer, currentToken, TOKEN_INPUT);
+        eat(lineLexer, currentToken, TOKEN_LPAREN);
+        eat(lineLexer, currentToken, TOKEN_RPAREN);
+        eat(lineLexer, currentToken, TOKEN_ARROW);
+        std::string varName = currentToken.value;
+        eat(lineLexer, currentToken, TOKEN_IDENTIFIER);
+        handler.onInput(varName);
+        return;
     }
     if (currentToken.type == TOKEN_PRINT) {
-        parsePrint(lineLexer, currentToken, variables, functions);
-        return Value();
+        eat(lineLexer, currentToken, TOKEN_PRINT);
+        eat(lineLexer, currentToken, TOKEN_LPAREN);
+        auto expr = parseExpr(lineLexer, currentToken);
+        eat(lineLexer, currentToken, TOKEN_RPAREN);
+        handler.onPrint(std::move(expr));
+        return;
     }
-    if (currentToken.type == TOKEN_END) {
-		parseEnd(lineLexer, currentToken, variables, functions);
-        return Value();
+    if (currentToken.type == TOKEN_PRINTLN) {
+        eat(lineLexer, currentToken, TOKEN_PRINTLN);
+        eat(lineLexer, currentToken, TOKEN_LPAREN);
+        auto expr = parseExpr(lineLexer, currentToken);
+        eat(lineLexer, currentToken, TOKEN_RPAREN);
+        handler.onPrintln(std::move(expr));
+        return;
     }
-    
+    if (currentToken.type == TOKEN_ENDL) {
+        eat(lineLexer, currentToken, TOKEN_ENDL);
+        handler.onEndl();
+        return;
+    }
     if (currentToken.type == TOKEN_EXIT) {
-		parseExit(lineLexer, currentToken, variables, functions);
-        return Value();
+        eat(lineLexer, currentToken, TOKEN_EXIT);
+        eat(lineLexer, currentToken, TOKEN_LPAREN);
+        auto expr = parseExpr(lineLexer, currentToken);
+        eat(lineLexer, currentToken, TOKEN_RPAREN);
+        handler.onExit(std::move(expr));
+        return;
     }
-
-    else if (currentToken.type == TOKEN_RET) {
-		return parseRet(lineLexer, currentToken, variables, functions);
+    if (currentToken.type == TOKEN_RET) {
+        eat(lineLexer, currentToken, TOKEN_RET);
+        if (currentToken.type != TOKEN_NEWLINE && currentToken.type != TOKEN_EOF && currentToken.type != TOKEN_RBRACE) {
+            auto expr = parseExpr(lineLexer, currentToken);
+            handler.onRet(std::move(expr));
+        } else {
+            handler.onRet(nullptr);
+        }
+        return;
     }
-
-    else if (currentToken.type == TOKEN_IDENTIFIER) {
-        // Âå∫ÂàÜÂáΩÊï∞Ë∞ÉÁî®ÂíåËµãÂÄº
+    if (currentToken.type == TOKEN_IDENTIFIER) {
         std::string identName = currentToken.value;
         Token nextToken = lineLexer.nextToken();
         skipWhitespace(lineLexer, nextToken);
 
         if (nextToken.type == TOKEN_LPAREN) {
-            // ÊÉÖÂÜµ1: func() Áõ¥Êé•Ë∞ÉÁî®
-            // ÊÉÖÂÜµ2: var = func() ËµãÂÄº
-
             currentToken = nextToken;
             eat(lineLexer, currentToken, TOKEN_LPAREN);
-
             std::vector<std::unique_ptr<Expr>> args;
             while (currentToken.type != TOKEN_RPAREN && currentToken.type != TOKEN_EOF) {
                 args.push_back(parseExpr(lineLexer, currentToken));
-
                 if (currentToken.type == TOKEN_COMMA) {
                     eat(lineLexer, currentToken, TOKEN_COMMA);
                     skipWhitespace(lineLexer, currentToken);
                 }
             }
-
             eat(lineLexer, currentToken, TOKEN_RPAREN);
-            CallExpr callExpr(identName, std::move(args));
-            Value callResult = callExpr.evaluate(variables, functions);
-
-            // Ê£ÄÊü•ÂêéÈù¢ÊòØÂê¶ËøòÊúâËµãÂÄº
-            skipWhitespace(lineLexer, currentToken);
-            if (currentToken.type == TOKEN_NEWLINE || currentToken.type == TOKEN_EOF) {
-                // Á∫ØÂáΩÊï∞Ë∞ÉÁî®
-                return callResult;
-            }
-            else {
-                // ËøôÈáå‰∏çÂ∫îËØ•Âá∫Áé∞ÂÖ∂‰ªñÊÉÖÂÜµ
-                throw std::runtime_error(makeParseError(currentToken, "Unexpected token after function call: " + currentToken.value));
-            }
-        }
-        else if (nextToken.type == TOKEN_EQUAL) {
-            // ËµãÂÄºÔºövarName = ...
+            handler.onCall(identName, std::move(args));
+        } else if (nextToken.type == TOKEN_EQUAL) {
             currentToken = nextToken;
             eat(lineLexer, currentToken, TOKEN_EQUAL);
             auto expr = parseExpr(lineLexer, currentToken);
-            Value result = expr->evaluate(variables, functions);
-            variables[identName] = result;
-
-            if (isOutInfo) {
-                std::cout << "[ÊâßË°å] ËµãÂÄºÂèòÈáèÔºö" << identName << " = " << result.asString() << std::endl;
-            }
-            return Value();
-        }
-        else if (nextToken.type == TOKEN_LBRACKET) {
-            // Êï∞ÁªÑÂÖÉÁ¥†ËµãÂÄºÔºöname[index] = expr
+            handler.onAssign(identName, std::move(expr));
+        } else if (nextToken.type == TOKEN_LBRACKET) {
             currentToken = nextToken;
             eat(lineLexer, currentToken, TOKEN_LBRACKET);
             auto indexExpr = parseExpr(lineLexer, currentToken);
@@ -515,25 +573,138 @@ Value Parser::parseLine(const std::string& line,
             skipWhitespace(lineLexer, currentToken);
             eat(lineLexer, currentToken, TOKEN_EQUAL);
             auto expr = parseExpr(lineLexer, currentToken);
-            Value result = expr->evaluate(variables, functions);
-
-            if (variables.find(identName) == variables.end()) {
-                throw std::runtime_error("Undefined array variable: " + identName);
+            handler.onIndexAssign(identName, std::move(indexExpr), std::move(expr));
+        } else if (nextToken.type == TOKEN_DOT) {
+            currentToken = nextToken;
+            eat(lineLexer, currentToken, TOKEN_DOT);
+            std::string funcName = currentToken.value;
+            eat(lineLexer, currentToken, TOKEN_IDENTIFIER);
+            if (currentToken.type == TOKEN_LPAREN) {
+                eat(lineLexer, currentToken, TOKEN_LPAREN);
+                std::vector<std::unique_ptr<Expr>> args;
+                while (currentToken.type != TOKEN_RPAREN && currentToken.type != TOKEN_EOF) {
+                    args.push_back(parseExpr(lineLexer, currentToken));
+                    if (currentToken.type == TOKEN_COMMA) {
+                        eat(lineLexer, currentToken, TOKEN_COMMA);
+                        skipWhitespace(lineLexer, currentToken);
+                    }
+                }
+                eat(lineLexer, currentToken, TOKEN_RPAREN);
+                handler.onCall(identName + "." + funcName, std::move(args));
+            } else {
+                std::string nextVal = currentToken.value.empty()
+                    ? "<" + std::string(tokenTypeName(currentToken.type)) + ">"
+                    : "'" + currentToken.value + "'";
+                throw std::runtime_error(makeParseError(currentToken,
+                    "Expected '(' after function name in qualified call, got " + nextVal));
             }
-            std::vector<Value>& arr = variables[identName].asArrayRef();
-            int idx = indexExpr->evaluate(variables, functions).asInt();
+        } else if (identName == "END" || identName == "end") {
+            handler.onEndl();
+        } else {
+            std::string nextVal = nextToken.value.empty()
+                ? "<" + std::string(tokenTypeName(nextToken.type)) + ">"
+                : "'" + nextToken.value + "'";
+            throw std::runtime_error(makeParseError(nextToken,
+                "Expected '(' or '=' after identifier, got " + nextVal));
+        }
+        return;
+    }
+}
+
+// ============================================================
+// Executing handler for the interpreter path
+// ============================================================
+namespace {
+    class ExecutingHandler : public StmtHandler {
+    public:
+        std::unordered_map<std::string, Value>& variables;
+        std::unordered_map<std::string, Function>& functions;
+        Value retValue;
+
+        ExecutingHandler(std::unordered_map<std::string, Value>& vars,
+                         std::unordered_map<std::string, Function>& funcs)
+            : variables(vars), functions(funcs) {}
+
+        void onPrint(std::unique_ptr<Expr> arg) override {
+            Value val = arg->evaluate(variables, functions);
+            switch (val.getType()) {
+            case Value::Type::Int: std::cout << val.asInt(); break;
+            case Value::Type::Double: std::cout << val.asDouble(); break;
+            case Value::Type::String: std::cout << val.asString(); break;
+            case Value::Type::Void: break;
+            case Value::Type::Array: std::cout << "[array]"; break;
+            }
+        }
+        void onPrintln(std::unique_ptr<Expr> arg) override {
+            Value val = arg->evaluate(variables, functions);
+            switch (val.getType()) {
+            case Value::Type::Int: std::cout << val.asInt(); break;
+            case Value::Type::Double: std::cout << val.asDouble(); break;
+            case Value::Type::String: std::cout << val.asString(); break;
+            case Value::Type::Void: break;
+            case Value::Type::Array: std::cout << "[array]"; break;
+            }
+            std::cout << std::endl;
+        }
+        void onExit(std::unique_ptr<Expr> arg) override {
+            Value val = arg->evaluate(variables, functions);
+            if (val.getType() == Value::Type::Int) std::exit(val.asInt());
+            std::exit(0);
+        }
+        Value onRet(std::unique_ptr<Expr> arg) override {
+            if (arg) {
+                retValue = arg->evaluate(variables, functions);
+            }
+            return retValue;
+        }
+        void onEndl() override { std::cout << std::endl; }
+        void onInput(const std::string& varName) override {
+            std::string userInput;
+            std::getline(std::cin, userInput);
+            variables[varName] = Value(userInput);
+        }
+        void onCall(const std::string& name, std::vector<std::unique_ptr<Expr>> args) override {
+            CallExpr callExpr(name, std::move(args));
+            callExpr.evaluate(variables, functions);
+        }
+        void onAssign(const std::string& name, std::unique_ptr<Expr> expr) override {
+            variables[name] = expr->evaluate(variables, functions);
+        }
+        void onIndexAssign(const std::string& name, std::unique_ptr<Expr> index, std::unique_ptr<Expr> value) override {
+            Value idxVal = index->evaluate(variables, functions);
+            Value val = value->evaluate(variables, functions);
+            if (variables.find(name) == variables.end()) {
+                throw std::runtime_error("Undefined array variable: " + name);
+            }
+            std::vector<Value>& arr = variables[name].asArrayRef();
+            int idx = idxVal.asInt();
             if (idx < 0 || idx >= static_cast<int>(arr.size())) {
                 throw std::runtime_error("Array index out of bounds: " + std::to_string(idx));
             }
-            arr[idx] = result;
-            return Value();
+            arr[idx] = val;
         }
-        else {
-            throw std::runtime_error(makeParseError(nextToken, "Expected '(' or '=' after identifier, got: " + nextToken.value));
+        void onIf(IfStatement ifStmt) override {
+            retValue = Parser::executeIfStatement(ifStmt, variables, functions);
         }
-    }
+        void onWhile(WhileStatement whileStmt) override {
+            retValue = Parser::executeWhileStatement(whileStmt, variables, functions);
+        }
+        void onFor(ForStatement forStmt) override {
+            retValue = Parser::executeForStatement(forStmt, variables, functions);
+        }
+        void onFnLabel(const std::string& name) override {}
+        void onGoto(const std::string& name) override {
+            throw GotoException(name);
+        }
+    };
+}
 
-    return Value();
+Value Parser::parseLine(const std::string& line,
+    std::unordered_map<std::string, Value>& variables,
+    std::unordered_map<std::string, Function>& functions) {
+    ExecutingHandler handler(variables, functions);
+    parseLine(line, handler);
+    return handler.retValue;
 }
 
 std::unique_ptr<Expr> Parser::parseCastExpr(Lexer& lexer, Token& currentToken, CastType castType) {
@@ -558,11 +729,11 @@ void Parser::parseInputStatement(Lexer& lexer, Token& currentToken,
     variables[varName] = inputExpr.evaluate(variables, functions);
 
     if (isOutInfo) {
-        std::cout << "[ÊâßË°å] ËæìÂÖ•ËµãÂÄºÔºö" << varName << " = \"" << variables[varName].asString() << "\"" << std::endl;
+        std::cout << "[÷¥––]  ‰»Î∏≥÷µ£∫" << varName << " = \"" << variables[varName].asString() << "\"" << std::endl;
     }
 }
 
-// Â∞ÜÊØîËæÉÊìç‰ΩúÁöÑ‰∏§‰æßË°®ËææÂºèÁî± parsePrimary Êîπ‰∏∫ parseAddÔºå‰ª•ÊîØÊåÅ a + b ÊØîËæÉÂÜôÊ≥ï
+// Ω´±»Ωœ≤Ÿ◊˜µƒ¡Ω≤‡±Ì¥Ô Ω”… parsePrimary ∏ƒŒ™ parseAdd£¨“‘÷ß≥÷ a + b ±»Ωœ–¥∑®
 std::unique_ptr<Expr> Parser::parseCompare(Lexer& lexer, Token& currentToken) {
     auto left = parseAdd(lexer, currentToken);
     while (currentToken.type == TOKEN_EQ || currentToken.type == TOKEN_NE ||
@@ -613,7 +784,7 @@ IfStatement Parser::parseIfStatement(Lexer& lexer, Token& currentToken) {
         if (!stmt.empty()) {
             ifStmt.body.push_back(stmt);
             if (isOutInfo) {
-                std::cout << "[Ëß£Êûê] ifÂùóÂÜÖËØ≠Âè•Ôºö" << stmt << std::endl;
+                std::cout << "[Ω‚Œˆ] iføÈƒ⁄”Ôæ‰£∫" << stmt << std::endl;
             }
         }
         skipWhitespace(lexer, currentToken);
@@ -622,10 +793,10 @@ IfStatement Parser::parseIfStatement(Lexer& lexer, Token& currentToken) {
     return ifStmt;
 }
 
-void Parser::executeIfStatement(const IfStatement& ifStmt,
+Value Parser::executeIfStatement(const IfStatement& ifStmt,
     std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
-    if (ifStmt.condition.empty()) return;
+    if (ifStmt.condition.empty()) return Value();
     Lexer condLexer(ifStmt.condition);
     Token condToken = condLexer.nextToken();
     skipWhitespace(condLexer, condToken);
@@ -633,19 +804,23 @@ void Parser::executeIfStatement(const IfStatement& ifStmt,
     Value condResult = condExpr->evaluate(variables, functions);
     bool isTrue = condResult.asBool();
     if (isOutInfo) {
-        std::cout << "[ÊâßË°å] ifÊù°‰ª∂Ôºö" << ifStmt.condition << " ‚Üí " << (isTrue ? "Áúü" : "ÂÅá") << std::endl;
+        std::cout << "[÷¥––] ifÃıº˛£∫" << ifStmt.condition << " °˙ " << (isTrue ? "’Ê" : "ºŸ") << std::endl;
     }
     if (isTrue) {
         for (const auto& stmt : ifStmt.body) {
             if (isOutInfo) {
-                std::cout << "[ÊâßË°å] ifÂùóÂÜÖÊâßË°åÔºö" << stmt << std::endl;
+                std::cout << "[÷¥––] iføÈƒ⁄÷¥––£∫" << stmt << std::endl;
             }
-            parseLine(stmt, variables, functions);
+            Value val = parseLine(stmt, variables, functions);
+            if (val.getType() != Value::Type::Void) {
+                return val;
+            }
         }
     }
+    return Value();
 }
 
-// Ëß£Êûê while ËØ≠Âè•ÔºàÁªìÊûÑ‰∏é if Áõ∏ÂêåÔºâ
+// Ω‚Œˆ while ”Ôæ‰£®Ω·ππ”Î if œ‡Õ¨£©
 WhileStatement Parser::parseWhileStatement(Lexer& lexer, Token& currentToken) {
     WhileStatement whileStmt;
     skipWhitespace(lexer, currentToken);
@@ -672,7 +847,7 @@ WhileStatement Parser::parseWhileStatement(Lexer& lexer, Token& currentToken) {
         if (!stmt.empty()) {
             whileStmt.body.push_back(stmt);
             if (isOutInfo) {
-                std::cout << "[Ëß£Êûê] whileÂùóÂÜÖËØ≠Âè•Ôºö" << stmt << std::endl;
+                std::cout << "[Ω‚Œˆ] whileøÈƒ⁄”Ôæ‰£∫" << stmt << std::endl;
             }
         }
         skipWhitespace(lexer, currentToken);
@@ -681,11 +856,11 @@ WhileStatement Parser::parseWhileStatement(Lexer& lexer, Token& currentToken) {
     return whileStmt;
 }
 
-// ÊâßË°å while ËØ≠Âè•
-void Parser::executeWhileStatement(const WhileStatement& whileStmt,
+// ÷¥–– while ”Ôæ‰
+Value Parser::executeWhileStatement(const WhileStatement& whileStmt,
     std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
-    if (whileStmt.condition.empty()) return;
+    if (whileStmt.condition.empty()) return Value();
     Lexer condLexer(whileStmt.condition);
     Token condToken = condLexer.nextToken();
     skipWhitespace(condLexer, condToken);
@@ -693,15 +868,18 @@ void Parser::executeWhileStatement(const WhileStatement& whileStmt,
     Value condResult = condExpr->evaluate(variables, functions);
     while (condResult.asBool()) {
         if (isOutInfo) {
-            std::cout << "[ÊâßË°å] whileÊù°‰ª∂Ôºö" << whileStmt.condition << " ‚Üí ÁúüÔºåËøõÂÖ•Âæ™ÁéØ" << std::endl;
+            std::cout << "[÷¥––] whileÃıº˛£∫" << whileStmt.condition << " °˙ ’Ê£¨Ω¯»Î—≠ª∑" << std::endl;
         }
         for (const auto& stmt : whileStmt.body) {
             if (isOutInfo) {
-                std::cout << "[ÊâßË°å] whileÂùóÂÜÖÊâßË°åÔºö" << stmt << std::endl;
+                std::cout << "[÷¥––] whileøÈƒ⁄÷¥––£∫" << stmt << std::endl;
             }
-            parseLine(stmt, variables, functions);
+            Value val = parseLine(stmt, variables, functions);
+            if (val.getType() != Value::Type::Void) {
+                return val;
+            }
         }
-        // ÈáçÊñ∞ËÆ°ÁÆóÊù°‰ª∂
+        // ÷ÿ–¬º∆À„Ãıº˛
         condLexer = Lexer(whileStmt.condition);
         condToken = condLexer.nextToken();
         skipWhitespace(condLexer, condToken);
@@ -709,8 +887,9 @@ void Parser::executeWhileStatement(const WhileStatement& whileStmt,
         condResult = condExpr->evaluate(variables, functions);
     }
     if (isOutInfo) {
-        std::cout << "[ÊâßË°å] whileÊù°‰ª∂Ôºö" << whileStmt.condition << " ‚Üí ÂÅáÔºåÈÄÄÂá∫Âæ™ÁéØ" << std::endl;
+        std::cout << "[÷¥––] whileÃıº˛£∫" << whileStmt.condition << " °˙ ºŸ£¨ÕÀ≥ˆ—≠ª∑" << std::endl;
     }
+    return Value();
 }
 
 ForStatement Parser::parseForStatement(Lexer& lexer, Token& currentToken) {
@@ -763,7 +942,7 @@ ForStatement Parser::parseForStatement(Lexer& lexer, Token& currentToken) {
         if (!stmt.empty()) {
             forStmt.body.push_back(stmt);
             if (isOutInfo) {
-                std::cout << "[Ëß£Êûê] forÂùóÂÜÖËØ≠Âè•Ôºö" << stmt << std::endl;
+                std::cout << "[Ω‚Œˆ] forøÈƒ⁄”Ôæ‰£∫" << stmt << std::endl;
             }
         }
         skipWhitespace(lexer, currentToken);
@@ -772,7 +951,7 @@ ForStatement Parser::parseForStatement(Lexer& lexer, Token& currentToken) {
     return forStmt;
 }
 
-void Parser::executeForStatement(const ForStatement& forStmt,
+Value Parser::executeForStatement(const ForStatement& forStmt,
     std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
     if (!forStmt.init.empty()) {
@@ -791,18 +970,22 @@ void Parser::executeForStatement(const ForStatement& forStmt,
             break;
         }
         if (isOutInfo) {
-            std::cout << "[ÊâßË°å] forÂæ™ÁéØÊâßË°å‰∏ÄÊ¨°" << std::endl;
+            std::cout << "[÷¥––] for—≠ª∑÷¥––“ª¥Œ" << std::endl;
         }
         for (const auto& stmt : forStmt.body) {
             if (isOutInfo) {
-                std::cout << "[ÊâßË°å] forÂùóÂÜÖÊâßË°åÔºö" << stmt << std::endl;
+                std::cout << "[÷¥––] forøÈƒ⁄÷¥––£∫" << stmt << std::endl;
             }
-            parseLine(stmt, variables, functions);
+            Value val = parseLine(stmt, variables, functions);
+            if (val.getType() != Value::Type::Void) {
+                return val;
+            }
         }
         if (!forStmt.iter.empty()) {
             parseLine(forStmt.iter, variables, functions);
         }
     }
+    return Value();
 }
 
 void Parser::parseImportStatement(Lexer& lexer, Token& currentToken,
@@ -811,11 +994,11 @@ void Parser::parseImportStatement(Lexer& lexer, Token& currentToken,
     skipWhitespace(lexer, currentToken);
     eat(lexer, currentToken, TOKEN_IMPORT);
 
-    // Ëé∑ÂèñÂ∫ìÂêç
+    // ªÒ»°ø‚√˚
     std::string libName = currentToken.value;
     eat(lexer, currentToken, TOKEN_IDENTIFIER);
 
-    // ÂèØÈÄâÂà´ÂêçÔºöimport math -> m
+    // ø…—°±√˚£∫import math -> m
     std::string alias;
     if (currentToken.type == TOKEN_ARROW) {
         eat(lexer, currentToken, TOKEN_ARROW);
@@ -827,16 +1010,16 @@ void Parser::parseImportStatement(Lexer& lexer, Token& currentToken,
         eat(lexer, currentToken, TOKEN_IDENTIFIER);
     }
 
-    // Ê£ÄÊü•Â∫ìÊòØÂê¶Â≠òÂú®Âπ∂Âä†ËΩΩ
+    // ºÏ≤Èø‚ «∑Ò¥Ê‘⁄≤¢º”‘ÿ
     auto& libMgr = LibraryManager::getInstance();
 
-    // Ëß£ÊûêÂ§ñÈÉ®Ë∞ÉÁî®Ë∑ØÂæÑ ‚Üí ÂÜÖÈÉ®Â∫ìÂêçÔºàÂ¶Ç "fox.sys.io.fs" ‚Üí "file"Ôºâ
+    // Ω‚ŒˆÕ‚≤øµ˜”√¬∑æ∂ °˙ ƒ⁄≤øø‚√˚£®»Á "fox.sys.io.fs" °˙ "file"£©
     std::string internalName = libMgr.resolveExternalPath(libName);
 
-    // ÂÖàÊ£ÄÊü•ÂéüÂßãÂêçÂ≠óÔºàÂ¶ÇÊûúÊòØÂ§ñÈÉ®Ë∑ØÂæÑÔºå‰ºöË¢´ isSystemLibrary ËØÜÂà´Ôºâ
+    // œ»ºÏ≤È‘≠ º√˚◊÷£®»Áπ˚ «Õ‚≤ø¬∑æ∂£¨ª·±ª isSystemLibrary  ∂±£©
     if (libMgr.isSystemLibrary(libName)) {
         if (isOutInfo) {
-            std::cout << "[ÂØºÂÖ•] " << libName;
+            std::cout << "[µº»Î] " << libName;
             if (!alias.empty()) std::cout << " -> " << alias;
             std::cout << std::endl;
         }
@@ -845,7 +1028,7 @@ void Parser::parseImportStatement(Lexer& lexer, Token& currentToken,
         try {
             libMgr.loadExternalLibrary(internalName);
             if (isOutInfo) {
-                std::cout << "[ÂØºÂÖ•] ";
+                std::cout << "[µº»Î] ";
                 if (libName != internalName) std::cout << libName << " (" << internalName << ")";
                 else std::cout << libName;
                 if (!alias.empty()) std::cout << " -> " << alias;
@@ -860,8 +1043,8 @@ void Parser::parseImportStatement(Lexer& lexer, Token& currentToken,
         throw std::runtime_error(makeParseError(currentToken, "Library not found: " + libName + ", please ensure the library file exists in C:\\FoxLibs\\ directory"));
     }
 
-    // Áî® import Êó∂ÂÜôÁöÑÂêçÂ≠ó‰Ωú‰∏∫Ë∞ÉÁî®ÂêçÂâçÁºÄ
-    // Â§ñÈÉ®Ë∑ØÂæÑÔºàÂ¶Ç fox.sys.io.fsÔºâËá™Âä®ÂèñÊúÄÂêé‰∏ÄÊÆµÔºàfsÔºâÔºåÂà´Âêç‰ºòÂÖà
+    // ”√ import  ±–¥µƒ√˚◊÷◊˜Œ™µ˜”√√˚«∞◊∫
+    // Õ‚≤ø¬∑æ∂£®»Á fox.sys.io.fs£©◊‘∂Ø»°◊Ó∫Û“ª∂Œ£®fs£©£¨±√˚”≈œ»
     std::string callName;
     if (!alias.empty()) {
         callName = alias;

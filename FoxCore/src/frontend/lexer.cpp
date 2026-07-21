@@ -77,13 +77,14 @@ std::string Lexer::readIdentifier() {
     }
     std::string ident = source.substr(start, pos - start);
     col += static_cast<int>(pos - start);
-    // ÂÖ≥ÈîÆÂ≠óÂà§Êñ≠
+    // πÿº¸◊÷≈–∂œ
     if (ident == "func") return "func";
     if (ident == "void") return "void";
     if (ident == "int") return "int";
     if (ident == "string") return "string"; 
     if (ident == "double") return "double";
     if (ident == "print") return "print";
+    if (ident == "println") return "println";
     if (ident == "ret") return "ret";
     if (ident == "input") return "input";
     if (ident == "if") return "if";
@@ -253,7 +254,7 @@ Token Lexer::nextToken() {
         }
     }
 
-    // Âü∫Á°ÄÁ¨¶Âè∑
+    // ª˘¥°∑˚∫≈
     switch (c) {
     case '+': pos++; col++; return makeToken(TOKEN_PLUS, "+", tokenLine, tokenCol);
     case '(': pos++; col++; return makeToken(TOKEN_LPAREN, "(", tokenLine, tokenCol);
@@ -266,6 +267,7 @@ Token Lexer::nextToken() {
         return makeToken(TOKEN_STRING, str, tokenLine, tokenCol);
     }
     case ',': pos++; col++; return makeToken(TOKEN_COMMA, ",", tokenLine, tokenCol);
+    case '.': pos++; col++; return makeToken(TOKEN_DOT, ".", tokenLine, tokenCol);
     default:
         if (isalpha(static_cast<unsigned char>(c)) || c == '_') {
             std::string ident = readIdentifier();
@@ -293,14 +295,17 @@ Token Lexer::nextToken() {
                 return makeToken(TOKEN_DOUBLE, "double", tokenLine, tokenCol);
             }
             if (ident == "print") return makeToken(TOKEN_PRINT, "print", tokenLine, tokenCol);
+            if (ident == "println") return makeToken(TOKEN_PRINTLN, "println", tokenLine, tokenCol);
             if (ident == "ret" || ident == "RET") return makeToken(TOKEN_RET, "ret", tokenLine, tokenCol);
             if (ident == "input") return makeToken(TOKEN_INPUT, "input", tokenLine, tokenCol);
             if (ident == "if") return makeToken(TOKEN_IF, "if", tokenLine, tokenCol);
             if (ident == "or" || ident == "OR") return makeToken(TOKEN_OR, "or", tokenLine, tokenCol);
             if (ident == "and" || ident == "AND") return makeToken(TOKEN_AND, "and", tokenLine, tokenCol);
             if (ident == "for") return makeToken(TOKEN_FOR, "for", tokenLine, tokenCol);
+            if (ident == "fn") return makeToken(TOKEN_FN, "fn", tokenLine, tokenCol);
+            if (ident == "goto") return makeToken(TOKEN_GOTO, "goto", tokenLine, tokenCol);
             if (ident == "while") return makeToken(TOKEN_WHILE, "while", tokenLine, tokenCol);
-            if (ident == "end" || ident == "END") return makeToken(TOKEN_END, "end", tokenLine, tokenCol);
+            if (ident == "endl" || ident == "ENDL") return makeToken(TOKEN_ENDL, "endl", tokenLine, tokenCol);
             if (ident == "exit") return makeToken(TOKEN_EXIT, "exit", tokenLine, tokenCol);
             if (ident == "import") return makeToken(TOKEN_IMPORT, "import", tokenLine, tokenCol);
             return makeToken(TOKEN_IDENTIFIER, ident, tokenLine, tokenCol);

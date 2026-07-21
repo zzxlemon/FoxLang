@@ -1,19 +1,20 @@
 #pragma once
 #include <string>
 
-// Tokenç±»åž‹æžšä¸¾
+// TokenÀàÐÍÃ¶¾Ù
 enum TokenT {
-    TOKEN_IDENTIFIER,  // å˜é‡åæˆ–å‡½æ•°å
-    TOKEN_NUMBER,      // æ•´æ•°
-    TOKEN_DOUBLE_NUM,  // æµ®ç‚¹æ•°
-    TOKEN_STRING,      // å­—ç¬¦ä¸²
+    TOKEN_IDENTIFIER,  // ±äÁ¿Ãû»òº¯ÊýÃû
+    TOKEN_NUMBER,      // ÕûÊý
+    TOKEN_DOUBLE_NUM,  // ¸¡µãÊý
+    TOKEN_STRING,      // ×Ö·û´®
     TOKEN_PLUS,        // +
     TOKEN_MINUS,       // -
     TOKEN_EQUAL,       // =
     TOKEN_LPAREN,      // (
     TOKEN_RPAREN,      // )
     TOKEN_PRINT,       // print
-    TOKEN_EOF,         // ç»“æŸ
+    TOKEN_PRINTLN,     // println
+    TOKEN_EOF,         // ½áÊø
     TOKEN_FUNC,        // func
     TOKEN_VOID,        // void
     TOKEN_INT,         // int
@@ -23,12 +24,12 @@ enum TokenT {
     TOKEN_LEFT_ARROW,  // <-
     TOKEN_LBRACE,      // {
     TOKEN_RBRACE,      // }
-    TOKEN_COLON,       // å†’å·
+    TOKEN_COLON,       // Ã°ºÅ
     TOKEN_RET,         // ret   
-    TOKEN_NEWLINE,     // æ¢è¡Œ
-    TOKEN_INPUT,       // inputå…³é”®å­—
-    TOKEN_INT_CAST,    // intç±»åž‹è½¬æ¢int()
-    TOKEN_DOUBLE_CAST, // doubleç±»åž‹è½¬æ¢double()
+    TOKEN_NEWLINE,     // »»ÐÐ
+    TOKEN_INPUT,       // input¹Ø¼ü×Ö
+    TOKEN_INT_CAST,    // intÀàÐÍ×ª»»int()
+    TOKEN_DOUBLE_CAST, // doubleÀàÐÍ×ª»»double()
     TOKEN_IF,          // if
     TOKEN_OR,          // or
     TOKEN_AND,         // and
@@ -40,16 +41,19 @@ enum TokenT {
     TOKEN_LE,          // <=
     TOKEN_COMMA,       // ,
     TOKEN_WHILE,       // while
-    TOKEN_END,         // end
+    TOKEN_ENDL,         // endl
     TOKEN_EXIT,        // exit 
     TOKEN_IMPORT,      // import
     TOKEN_FOR,         // for
+    TOKEN_FN,          // fn
+    TOKEN_GOTO,        // goto
     TOKEN_LBRACKET,    // [
     TOKEN_RBRACKET,    // ]
-    TOKEN_SEMICOLON    // ;
+    TOKEN_SEMICOLON,    // ;
+    TOKEN_DOT           // .
 };
 
-// Tokenç»“æž„ä½“
+// Token½á¹¹Ìå
 struct Token {
     TokenT type;
     std::string value;

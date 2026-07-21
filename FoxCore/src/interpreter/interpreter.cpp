@@ -16,10 +16,10 @@ void Interpreter::parseCode(const std::string& code, const std::string& filename
         Parser parser(code, variables, functions);
         parser.parseAllFunctions();
         if (isOutInfo) {
-            std::cout << "\n===== 解析完成的函数列表 =====" << std::endl;
+            std::cout << "\n===== ������ɵĺ����б� =====" << std::endl;
             for (const auto& pair : functions) {
                 const auto& func = pair.second;
-                std::cout << "函数名：" << func.name << " 返回类型：" << func.returnType << " 语句数：" << func.body.size() << std::endl;
+                std::cout << "��������" << func.name << " �������ͣ�" << func.returnType << " �������" << func.body.size() << std::endl;
             }
         }
     }
@@ -37,16 +37,48 @@ Value Interpreter::execute(const std::string& line) {
 Value Interpreter::executeFunction(const Function& func) {
     Value returnValue;
     if (isOutInfo) {
-        std::cout << "\n===== 执行函数：" << func.name << " =====" << std::endl;
+        std::cout << "\n===== ִ�к�����" << func.name << " =====" << std::endl;
     }
-    for (const auto& stmt : func.body) {
-        if (isOutInfo) {
-            std::cout << "[执行] 语句：" << stmt << std::endl;
+
+    // Pre-scan labels for goto
+    std::unordered_map<std::string, size_t> labels;
+    for (size_t i = 0; i < func.body.size(); i++) {
+        const auto& line = func.body[i];
+        if (line.rfind("fn ", 0) == 0 && line.back() == ':') {
+            std::string label = line.substr(3, line.size() - 4);
+            size_t start = label.find_first_not_of(" \t");
+            size_t end = label.find_last_not_of(" \t");
+            if (start != std::string::npos && end != std::string::npos)
+                label = label.substr(start, end - start + 1);
+            labels[label] = i;
         }
-        Value val = execute(stmt);
-        if (stmt.find("ret") == 0) {
-            returnValue = val;
-            break;
+    }
+
+    size_t i = 0;
+    while (i < func.body.size()) {
+        try {
+            const auto& stmt = func.body[i];
+            if (isOutInfo) {
+                std::cout << "[ִ��] ��䣺" << stmt << std::endl;
+            }
+
+            if (stmt.rfind("fn ", 0) == 0) {
+                i++;
+                continue;
+            }
+
+            Value val = execute(stmt);
+            if (val.getType() != Value::Type::Void) {
+                returnValue = val;
+                break;
+            }
+            i++;
+        } catch (const GotoException& e) {
+            auto it = labels.find(e.label);
+            if (it == labels.end()) {
+                throw std::runtime_error("Undefined goto label: " + e.label);
+            }
+            i = it->second;
         }
     }
 
@@ -87,29 +119,20 @@ void Interpreter::runMainFunc() {
     }
 }
 
-// System function registration
+// System function recognition: ONLY dot-notation (lib.func or alias.func)
+// Flat/bare names like "random" or "cos" are NEVER recognized as system functions.
+// Users MUST use "import lib" and call with "lib.func(...)" (or alias prefix).
+// The library must be imported first, otherwise the call is rejected.
 bool Interpreter::isSystemFunction(const std::string& funcName) {
     auto& libMgr = LibraryManager::getInstance();
 
-    // 兼容旧格式：直接函数名
-    // 但如果该函数名属于某个已导入的库，则禁止平名调用，必须使用 lib.func 格式
-    auto checkAndBlock = [&](const std::string& name) -> bool {
-        if (libMgr.isFlatNameBlockedByImport(name)) return false;
-        return true;
-    };
-
-    if (funcName == "random") return checkAndBlock(funcName);
-    if (funcName == "file_open" || funcName == "file_read" ||
-        funcName == "file_write" || funcName == "file_close" || funcName == "file_remove" || 
-        funcName == "len" || funcName == "length" ||
-        funcName == "cos" || funcName == "sin" || funcName == "tan") return checkAndBlock(funcName);
-
-    // 新格式：库名.函数名（支持多段路径如 fox.sys.io.fs.file_open）
     size_t dotPos = funcName.rfind('.');
     if (dotPos != std::string::npos) {
-        std::string libName = funcName.substr(0, dotPos);
-        libName = libMgr.resolveAlias(libName);
-        return libMgr.isSystemLibrary(libName) || libMgr.hasLibrary(libName);
+        std::string libPrefix = funcName.substr(0, dotPos);
+        std::string resolvedLib = libMgr.resolveAlias(libPrefix);
+        if (libMgr.hasLibrary(resolvedLib) && libMgr.isImported(resolvedLib)) {
+            return true;
+        }
     }
 
     return false;
@@ -118,47 +141,14 @@ bool Interpreter::isSystemFunction(const std::string& funcName) {
 Value Interpreter::SystemFunctionBuildIn(const std::string& funcName, const std::vector<Value>& args) {
     auto& libMgr = LibraryManager::getInstance();
 
-    // 兼容旧格式
-    if (funcName == "random") {
-        return libMgr.callSystemFunction("random", "random", args);
+    size_t dotPos = funcName.rfind('.');
+    if (dotPos != std::string::npos) {
+        std::string libName = funcName.substr(0, dotPos);
+        std::string funcOnly = funcName.substr(dotPos + 1);
+        libName = libMgr.resolveAlias(libName);
+        return libMgr.callSystemFunction(libName, funcOnly, args);
     }
-    else if (funcName == "file_open") {
-        return libMgr.callSystemFunction("file", "file_open", args);
-    }
-    else if (funcName == "file_read") {
-        return libMgr.callSystemFunction("file", "file_read", args);
-    }
-    else if (funcName == "file_write") {
-        return libMgr.callSystemFunction("file", "file_write", args);
-    }
-    else if (funcName == "file_close") {
-        return libMgr.callSystemFunction("file", "file_close", args);
-    }
-    else if (funcName == "file_remove") {
-        return libMgr.callSystemFunction("file", "remove", args);
-    }
-    else if (funcName == "len" || funcName == "length") {
-        return libMgr.callSystemFunction("util", "len", args);
-    }
-    else if (funcName == "cos") {
-        return libMgr.callSystemFunction("math", "cos", args);
-    }
-    else if (funcName == "sin") {
-		return libMgr.callSystemFunction("math", "sin", args);
-    }
-    else if (funcName == "tan") {
-        return libMgr.callSystemFunction("math", "tan", args);
-	}
-    else {
-        size_t dotPos = funcName.rfind('.');
-        if (dotPos != std::string::npos) {
-            std::string libName = funcName.substr(0, dotPos);
-            std::string funcOnly = funcName.substr(dotPos + 1);
-            libName = libMgr.resolveAlias(libName);
-            return libMgr.callSystemFunction(libName, funcOnly, args);
-        }
-        throw std::runtime_error("Unimplemented system function: " + funcName);
-    }
+    throw std::runtime_error("Unimplemented system function: " + funcName);
 }
 
 void RegFunc() {

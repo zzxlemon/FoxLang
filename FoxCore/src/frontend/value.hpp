@@ -22,7 +22,7 @@ public:
     double asDouble() const;
     const std::string& asString() const;
     const std::vector<Value>& asArray() const;
-    // 鑾峰彇绫诲瀷瀛楄妭澶у皬
+    // 获取类型字节大小
     int getByteSize() const;
 
     bool asBool() const {

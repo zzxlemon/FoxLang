@@ -1,7 +1,7 @@
 #include "SystemFunctionsMath.h"
 #include <cmath>
 /**
-* Note: The tan expression in this math library will explode near Ï€/2.
+* Note: The tan expression in this math library will explode near ¦Ð/2.
 */
 Value Math::sin(const std::vector<Value>& args) {
 	if (args.size() != 1) {

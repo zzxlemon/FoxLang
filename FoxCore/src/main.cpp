@@ -7,59 +7,11 @@
 #include <iostream>
 #include <cstdio>
 #include <fstream>
-#ifdef _WIN32
-#include <windows.h>
-#include <io.h>
-#include <fcntl.h>
-#include <locale.h>
-#endif
 
 std::string fz_name_file = "";
 std::string fz_name_file_v = "";
 const char XOR_KEY = 0x2A;
 std::string encrypt_key = "";
-
-#ifdef _WIN32
-static void enableWindowsUtf8() {
-    // 1. Console output code page → UTF-8
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
-
-    // 2. CRT stdout/stderr → binary mode，不做任何编码转换
-    //    UTF-8 字节直达终端（终端已是 CP_UTF8）
-    fflush(stdout);
-    _setmode(_fileno(stdout), _O_BINARY);
-    fflush(stderr);
-    _setmode(_fileno(stderr), _O_BINARY);
-
-    // 3. C++ locale
-    setlocale(LC_ALL, ".UTF-8");
-
-    // 4. Enable ANSI escape processing（for error_reporter colors）
-    HANDLE outHandle = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (outHandle != INVALID_HANDLE_VALUE) {
-        DWORD mode;
-        if (GetConsoleMode(outHandle, &mode)) {
-#ifdef ENABLE_VIRTUAL_TERMINAL_PROCESSING
-            SetConsoleMode(outHandle, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-#else
-            SetConsoleMode(outHandle, mode | ENABLE_PROCESSED_OUTPUT);
-#endif
-        }
-    }
-    HANDLE errHandle = GetStdHandle(STD_ERROR_HANDLE);
-    if (errHandle != INVALID_HANDLE_VALUE) {
-        DWORD mode;
-        if (GetConsoleMode(errHandle, &mode)) {
-#ifdef ENABLE_VIRTUAL_TERMINAL_PROCESSING
-            SetConsoleMode(errHandle, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-#else
-            SetConsoleMode(errHandle, mode | ENABLE_PROCESSED_OUTPUT);
-#endif
-        }
-    }
-}
-#endif
 
 static void CreateFile(const std::string& source_code) {
     std::ofstream outfile(fz_name_file_v, std::ios::binary);
@@ -83,9 +35,6 @@ static void fz1(const std::string& key) {
 }
 
 int main(int argc, char** argv) { 
-#ifdef _WIN32
-    enableWindowsUtf8();
-#endif
     Interpreter interpreter;
     if (argc == 1) {
         return 0;  
@@ -162,6 +111,7 @@ int main(int argc, char** argv) {
                 BytecodeCompiler compiler;
                 CompiledProgram prog = compiler.compile(fullCode, filename);
                 std::vector<uint8_t> fcData = prog.serialize();
+                xor_crypt(fcData, FC_XOR_KEY);
                 std::string basePath = filename;
                 size_t dot = basePath.rfind('.');
                 if (dot != std::string::npos) basePath = basePath.substr(0, dot);
@@ -180,7 +130,9 @@ int main(int argc, char** argv) {
                     ErrorReporter::reportSimple("FileError", "Cannot create .fc file: " + outName);
                 }
             } catch (const std::exception& e) {
-                ErrorReporter::reportFromException("CompileError", e.what());
+                if (!ErrorReporter::hasError()) {
+                    ErrorReporter::reportFromException("CompileError", e.what());
+                }
                 return 1;
             }
             return 0;
@@ -207,6 +159,7 @@ int main(int argc, char** argv) {
             if (fullCode.empty()) return 1;
             try {
                 std::vector<uint8_t> fcData(fullCode.begin(), fullCode.end());
+                xor_crypt(fcData, FC_XOR_KEY);
                 CompiledProgram prog = CompiledProgram::deserialize(fcData);
                 RegFunc(); // initialize system libraries for function resolution
                 VM vm;
@@ -288,7 +241,7 @@ int main(int argc, char** argv) {
     if (!filename.empty()) {
         std::string fullCode = read_file(filename);
         ErrorReporter::setSource(filename, fullCode);
-        RegFunc(); // 初始化系统库，以便 import 能正确识别
+        RegFunc(); // ��ʼ��ϵͳ�⣬�Ա� import ����ȷʶ��
         interpreter.parseCode(fullCode, filename);
         if (!interpreter.parse_failed) {
             interpreter.runMainFunc();
