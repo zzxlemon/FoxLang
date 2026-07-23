@@ -9,16 +9,25 @@
 #include <string>
 
 std::string read_file(const std::string& filename) {
-    std::ifstream inFile(filename, std::ios::binary);
+    std::ifstream inFile(filename, std::ios::binary | std::ios::ate);
     if (!inFile.is_open()) {
         ErrorReporter::reportSimple("FileError", "Cannot open file: " + filename);
         std::exit(1);
     }
-    std::string fullCode((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+    
+    // pre-allocate memory, read all at once
+    std::streamsize size = inFile.tellg();
+    inFile.seekg(0, std::ios::beg);
+    
+    std::string fullCode(size, '\0');
+    if (!inFile.read(&fullCode[0], size)) {
+        ErrorReporter::reportSimple("FileError", "Failed to read file: " + filename);
+        std::exit(1);
+    }
     inFile.close();
 
     if (isOutInfo) {
-        std::cout << "成功读取文件：" << filename << "，内容长度：" << fullCode.size() << " 字节" << std::endl;
+        std::cout << "Successfully read file: " << filename << " size: " << fullCode.size() << " bytes" << std::endl;
     }
     return fullCode;
 }
@@ -29,7 +38,7 @@ void xor_crypt(std::vector<uint8_t>& data, uint8_t key) {
     }
 }
 
-// 单字符密钥的异或加密/解密
+// single-char key encrypt/decrypt
 std::string xor_encrypt_decrypt(const std::string& input, char key) {
     std::string output = input;
     for (size_t i = 0; i < input.size(); ++i) {
@@ -38,7 +47,7 @@ std::string xor_encrypt_decrypt(const std::string& input, char key) {
     return output;
 }
 
-// 字符串密钥的异或加密/解密
+// string key encrypt/decrypt
 std::string xor_encrypt_decrypt_str_key(const std::string& input, const std::string& key) {
     std::string output = input;
     size_t key_len = key.size();
@@ -50,7 +59,7 @@ std::string xor_encrypt_decrypt_str_key(const std::string& input, const std::str
     return output;
 }
 
-// 使用字符串密钥加密文件
+// encrypt file with string key
 void encrypt_file_with_key(const std::string& src_path, const std::string& dst_path, const std::string& key) {
     std::ifstream src_file(src_path, std::ios::binary);
     if (!src_file) {
@@ -67,12 +76,13 @@ void encrypt_file_with_key(const std::string& src_path, const std::string& dst_p
         ErrorReporter::reportSimple("FileError", "Cannot create encrypted file: " + dst_path);
         return;
     }
-    dst_file.write(encrypted.c_str(), encrypted.size());
+    // use .data() to avoid truncation at 0x00
+    dst_file.write(encrypted.data(), encrypted.size());
     dst_file.close();
-    std::cout << "加密输出文件：" << dst_path << " (密钥: " << key << ")" << std::endl;
+    std::cout << "Encrypted file: " << dst_path << " (key: " << key << ")" << std::endl;
 }
 
-// 使用字符串密钥解密文件
+// decrypt file with string key
 std::string decrypt_file_with_key(const std::string& fz_path, const std::string& key) {
     std::ifstream fz_file(fz_path, std::ios::binary);
     if (!fz_file) {
@@ -84,7 +94,7 @@ std::string decrypt_file_with_key(const std::string& fz_path, const std::string&
     return xor_encrypt_decrypt_str_key(encrypted, key);
 }
 
-// 加密文件
+// encrypt file with single char key
 void encrypt_file(const std::string& src_path, const std::string& dst_path, char key) {
     std::ifstream src_file(src_path, std::ios::binary);
     if (!src_file) {
@@ -99,13 +109,14 @@ void encrypt_file(const std::string& src_path, const std::string& dst_path, char
         ErrorReporter::reportSimple("FileError", "Cannot create encrypted file: " + dst_path);
         return;
     }
-    dst_file.write(encrypted.c_str(), encrypted.size());
+    // use .data() to avoid truncation bug
+    dst_file.write(encrypted.data(), encrypted.size());
     dst_file.close();
 
-    std::cout << "输出文件：" << dst_path << std::endl;
+    std::cout << "Encrypted file: " << dst_path << std::endl;
 }
 
-// 解密文件
+// decrypt file with single char key
 std::string decrypt_file(const std::string& fz_path, char key) {
     std::ifstream fz_file(fz_path, std::ios::binary);
     if (!fz_file) {
@@ -116,4 +127,3 @@ std::string decrypt_file(const std::string& fz_path, char key) {
     fz_file.close();
     return xor_encrypt_decrypt(encrypted, key);
 }
-

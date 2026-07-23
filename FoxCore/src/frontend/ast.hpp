@@ -14,7 +14,6 @@ enum class CompareType {
     EQ, NE, GT, LT, GE, LE
 };
 
-// AST节点基类
 class Expr {
 public:
     virtual ~Expr() = default;
@@ -22,7 +21,6 @@ public:
         std::unordered_map<std::string, Function>& functions) = 0;
 };
 
-// 变量节点
 class IdentifierExpr : public Expr {
 public:
     std::string name;
@@ -31,7 +29,6 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 整数节点
 class NumberExpr : public Expr {
 public:
     int value;
@@ -40,7 +37,6 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 浮点数节点
 class DoubleExpr : public Expr {
 public:
     double value;
@@ -49,7 +45,6 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 字符串节点
 class StringExpr : public Expr {
 public:
     std::string value;
@@ -58,7 +53,6 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 数组字面量节点
 class ArrayExpr : public Expr {
 public:
     std::vector<std::unique_ptr<Expr>> elements;
@@ -67,7 +61,6 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 数组索引访问节点
 class IndexExpr : public Expr {
 public:
     std::unique_ptr<Expr> arrayExpr;
@@ -77,7 +70,6 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 函数调用节点
 class CallExpr : public Expr {
 public:
     std::string funcName;
@@ -88,7 +80,6 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 整数浮点数（二元运算节点）
 class BinaryExpr : public Expr {
 public:
     std::unique_ptr<Expr> left;
@@ -105,7 +96,14 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 类型转换表达式节点
+class NewExpr : public Expr {
+public:
+    std::unique_ptr<Expr> sizeExpr;
+    explicit NewExpr(std::unique_ptr<Expr> size) : sizeExpr(std::move(size)) {}
+    Value evaluate(std::unordered_map<std::string, Value>& variables,
+        std::unordered_map<std::string, Function>& functions) override;
+};
+
 class CastExpr : public Expr {
 public:
     CastType castType;
@@ -127,7 +125,6 @@ public:
         std::unordered_map<std::string, Function>& functions) override;
 };
 
-// 条件组合节点
 class ConditionExpr : public Expr {
 public:
     std::unique_ptr<Expr> left;

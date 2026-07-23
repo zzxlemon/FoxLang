@@ -77,7 +77,6 @@ std::string Lexer::readIdentifier() {
     }
     std::string ident = source.substr(start, pos - start);
     col += static_cast<int>(pos - start);
-    // ¹Ø¼ü×ÖÅÐ¶Ï
     if (ident == "func") return "func";
     if (ident == "void") return "void";
     if (ident == "int") return "int";
@@ -95,6 +94,7 @@ std::string Lexer::readIdentifier() {
     if (ident == "exit") return "exit";
 	if (ident == "import") return "import";
     if (ident == "for") return "for";
+    if (ident == "new") return "new";
     return ident;
 }
 
@@ -254,7 +254,6 @@ Token Lexer::nextToken() {
         }
     }
 
-    // »ù´¡·ûºÅ
     switch (c) {
     case '+': pos++; col++; return makeToken(TOKEN_PLUS, "+", tokenLine, tokenCol);
     case '(': pos++; col++; return makeToken(TOKEN_LPAREN, "(", tokenLine, tokenCol);
@@ -308,6 +307,7 @@ Token Lexer::nextToken() {
             if (ident == "endl" || ident == "ENDL") return makeToken(TOKEN_ENDL, "endl", tokenLine, tokenCol);
             if (ident == "exit") return makeToken(TOKEN_EXIT, "exit", tokenLine, tokenCol);
             if (ident == "import") return makeToken(TOKEN_IMPORT, "import", tokenLine, tokenCol);
+            if (ident == "new") return makeToken(TOKEN_NEW, "new", tokenLine, tokenCol);
             return makeToken(TOKEN_IDENTIFIER, ident, tokenLine, tokenCol);
         }
         else if (isdigit(static_cast<unsigned char>(c))) {

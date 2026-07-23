@@ -2,7 +2,6 @@
 #include <iostream>
 #include <Windows.h>
 
-// base64 转换表, 共64个
 static const char base64_alphabet[] = {
 	'A', 'B', 'C', 'D', 'E', 'F', 'G',
 	'H', 'I', 'J', 'K', 'L', 'M', 'N',
@@ -16,7 +15,6 @@ static const char base64_alphabet[] = {
 	'+', '/'
 };
 
-// 解码时使用
 static const unsigned char base64_suffix_map[256] = {
 	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 253, 255,
 	255, 253, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
@@ -44,62 +42,50 @@ static const unsigned char base64_suffix_map[256] = {
 
 static char cmove_bits(unsigned char src, unsigned lnum, unsigned rnum)
 {
-	src <<= lnum; // src = src << lnum;
-	src >>= rnum; // src = src >> rnum;
+	src <<= lnum;
+	src >>= rnum;
 	return src;
 }
 
 int base64_encode(const char* indata, int inlen, char* outdata, int* outlen)
 {
 	int ret = 0;
-	if (indata == NULL || inlen == 0)
+	if (indata == NULL || inlen == 0 || outdata == NULL)
 	{
-		return ret = -1;
+		return -1;
 	}
 
-	// 源字符串长度, 如果in_len不是3的倍数, 那么需要补成3的倍数
+	// source string processed, if in_len not multiple of 3, pad to multiple of 3
 	int in_len = 0;
 
-	// 需要补齐的字符个数, 这样只有2, 1, 0(0的话不需要拼接, )
+	// pad chars needed: 2, 1, or 0 (0 means no padding)
 	int pad_num = 0;
 	if (inlen % 3 != 0)
 	{
 		pad_num = 3 - inlen % 3;
 	}
 
-	// 拼接后的长度, 实际编码需要的长度(3的倍数)
 	in_len = inlen + pad_num;
 
-	// 编码后的长度
 	int out_len = in_len * 8 / 6;
 
-	// 定义指针指向传出data的首地址
 	char* p = outdata;
 
-	//编码, 长度为调整后的长度, 3字节一组
 	for (int i = 0; i < in_len; i += 3)
 	{
-		// 将indata第一个字符向右移动2bit(丢弃2bit)
-		int value = *indata >> 2;
-
-		// 对应base64转换表的字符
-		char c = base64_alphabet[value];
-
-		// 将对应字符(编码后字符)赋值给outdata第一字节
-		*p = c;
-
-		//处理最后一组(最后3字节)的数据
-		if (i == inlen + pad_num - 3 && pad_num != 0)
+		if (i == in_len - 3 && pad_num != 0)
 		{
-			if (pad_num == 1)
+			int value = (unsigned char)(*indata) >> 2;
+			*p = base64_alphabet[value];
+
+			if (pad_num == 1) 
 			{
 				*(p + 1) = base64_alphabet[(int)(cmove_bits(*indata, 6, 2) + cmove_bits(*(indata + 1), 0, 4))];
 				*(p + 2) = base64_alphabet[(int)cmove_bits(*(indata + 1), 4, 2)];
 				*(p + 3) = '=';
 			}
-			else if (pad_num == 2)
+			else if (pad_num == 2) 
 			{
-				// 编码后的数据要补两个 '='
 				*(p + 1) = base64_alphabet[(int)cmove_bits(*indata, 6, 2)];
 				*(p + 2) = '=';
 				*(p + 3) = '=';
@@ -107,14 +93,17 @@ int base64_encode(const char* indata, int inlen, char* outdata, int* outlen)
 		}
 		else
 		{
-			// 处理正常的3字节的数据
+			int value = (unsigned char)(*indata) >> 2;
+			*p = base64_alphabet[value];
+
 			*(p + 1) = base64_alphabet[cmove_bits(*indata, 6, 2) + cmove_bits(*(indata + 1), 0, 4)];
 			*(p + 2) = base64_alphabet[cmove_bits(*(indata + 1), 4, 2) + cmove_bits(*(indata + 2), 0, 6)];
 			*(p + 3) = base64_alphabet[*(indata + 2) & 0x3f];
+			indata += 3; 
 		}
 		p += 4;
-		indata += 3;
 	}
+
 	if (outlen != NULL)
 	{
 		*outlen = out_len;
@@ -124,42 +113,35 @@ int base64_encode(const char* indata, int inlen, char* outdata, int* outlen)
 
 int base64_decode(const char* indata, int inlen, char* outdata, int* outlen)
 {
-
 	int ret = 0;
 	if (indata == NULL || inlen <= 0 || outdata == NULL || outlen == NULL)
 	{
-		return ret = -1;
+		return -1;
 	}
 	if (inlen % 4 != 0)
 	{
-		// 需要解码的数据不是4字节倍数
-		return ret = -2;
+		return -2;
 	}
 
 	int t = 0, x = 0, y = 0, i = 0;
 	unsigned char c = 0;
 	int g = 3;
 
-	while (indata[x] != 0)
+	while (x < inlen && indata[x] != 0)
 	{
-		// 需要解码的数据对应的ASCII值对应base64_suffix_map的值
-		c = base64_suffix_map[indata[x++]];
+		c = base64_suffix_map[(unsigned char)indata[x++]];
 
-		// 对应的值不在转码表中
 		if (c == 255)
 			return -1;
 
-		// 对应的值是换行或者回车
 		if (c == 253)
 			continue;
 
 		if (c == 254)
 		{
-			// 对应的值是'='
 			c = 0; g--;
 		}
 
-		// 将其依次放入一个int型中占3字节
 		t = (t << 6) | c;
 
 		if (++y == 4)
@@ -176,22 +158,3 @@ int base64_decode(const char* indata, int inlen, char* outdata, int* outlen)
 	}
 	return ret;
 }
-
-/*
-int main(int argc, char* argv[])
-{
-	char str1[] = "hello lyshark";
-	char str3[30] = { 0 };
-	char str2[30] = { 0 };
-	int len = 0;
-
-	base64_encode(str1, (int)strlen(str1), str2, &len);
-	printf("加密后: %s 长度: %d\n", str2, len);
-
-	base64_decode(str2, (int)strlen(str2), str3, &len);
-	printf("解密后: %s 长度: %d\n", str3, len);
-
-	system("pause");
-	return 0;
-}
-*/

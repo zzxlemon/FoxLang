@@ -4,6 +4,29 @@
 #include <iostream>
 #include <algorithm>
 
+static int g_funcNewAllocBytes = -1;
+static const int MAX_FUNC_NEW_BYTES = 512;
+
+void Parser::resetNewAllocBytes() {
+    g_funcNewAllocBytes = 0;
+}
+
+bool Parser::checkNewAllocBytes(int size) {
+    if (g_funcNewAllocBytes < 0) {
+        return true;
+    }
+    if (g_funcNewAllocBytes + size > MAX_FUNC_NEW_BYTES) {
+        throw std::runtime_error(
+            "Function stack memory exceeded. new() total would be " +
+            std::to_string(g_funcNewAllocBytes + size) +
+            " bytes, but func stack limit is " +
+            std::to_string(MAX_FUNC_NEW_BYTES) +
+            " bytes. Define this variable outside the function (heap).");
+    }
+    g_funcNewAllocBytes += size;
+    return true;
+}
+
 static std::string makeParseError(const Token& token, const std::string& message) {
     return "Syntax error: " + token.position() + ": " + message;
 }
@@ -41,7 +64,6 @@ static const char* tokenTypeName(TokenT type) {
 }
 
 void Parser::skipWhitespace(Lexer& lexer, Token& currentToken) {
-    // 仅跳过空格/制表符/回车，不跳过换行/EOF/有效Token
     while (currentToken.type != TOKEN_EOF && !currentToken.value.empty()
         && isspace(static_cast<unsigned char>(currentToken.value[0]))
         && currentToken.value[0] != '\n') {
@@ -52,7 +74,7 @@ void Parser::skipWhitespace(Lexer& lexer, Token& currentToken) {
 void Parser::eat(Lexer& lexer, Token& currentToken, TokenT expectedType) {
     if (currentToken.type == expectedType) {
         currentToken = lexer.nextToken();
-        skipWhitespace(lexer, currentToken); // 跳过空格
+        skipWhitespace(lexer, currentToken);
     }
     else {
         throw std::runtime_error(makeParseError(currentToken,
@@ -81,6 +103,13 @@ std::unique_ptr<Expr> Parser::parsePrimary(Lexer& lexer, Token& currentToken) {
     else if (token.type == TOKEN_DOUBLE_CAST) {
         eat(lexer, currentToken, TOKEN_DOUBLE_CAST);
         return parseCastExpr(lexer, currentToken, CastType::Double);
+    }
+    else if (token.type == TOKEN_NEW) {
+        eat(lexer, currentToken, TOKEN_NEW);
+        eat(lexer, currentToken, TOKEN_LPAREN);
+        auto sizeExpr = parseExpr(lexer, currentToken);
+        eat(lexer, currentToken, TOKEN_RPAREN);
+        return std::unique_ptr<NewExpr>(new NewExpr(std::move(sizeExpr)));
     }
 
     if (token.type == TOKEN_IDENTIFIER) {
@@ -151,7 +180,6 @@ std::unique_ptr<Expr> Parser::parsePrimary(Lexer& lexer, Token& currentToken) {
     }
 }
 
-// 处理加减优先级（低优先级于乘除）
 std::unique_ptr<Expr> Parser::parseAdd(Lexer& lexer, Token& currentToken) {
     auto left = parsePrimary(lexer, currentToken);
     while (currentToken.type == TOKEN_PLUS || currentToken.type == TOKEN_MINUS) {
@@ -183,19 +211,6 @@ void Parser::parseAssignment(Lexer& lexer, Token& currentToken,
     eat(lexer, currentToken, TOKEN_EQUAL);
     auto expr = parseExpr(lexer, currentToken);
     variables[varName] = expr->evaluate(variables, functions);
-
-    if (isOutInfo) {
-        Value& assigned = variables[varName];
-        std::cout << "[执行] 赋值变量：" << varName << " = ";
-        switch (assigned.getType()) {
-        case Value::Type::Int: std::cout << assigned.asInt(); break;
-        case Value::Type::Double: std::cout << assigned.asDouble(); break;
-        case Value::Type::String: std::cout << assigned.asString(); break;
-        case Value::Type::Void: std::cout << "(void)"; break;
-        case Value::Type::Array: std::cout << "[array]"; break;
-        }
-        std::cout << std::endl;
-    }
 }
 
 void Parser::parsePrint(Lexer& lexer, Token& currentToken,
@@ -246,19 +261,13 @@ Value Parser::parseRet(Lexer& lexer, Token& currentToken,
     eat(lexer, currentToken, TOKEN_RET);
     auto expr = parseExpr(lexer, currentToken);
     Value retVal = expr->evaluate(variables, functions);
-
-    if (isOutInfo) {
-        std::cout << "[执行] 返回值：" << retVal.asString() << std::endl;
-    }
     return retVal;
 }
     
-// 解析单条语句
 std::string Parser::parseSingleStatement(Lexer& lexer, Token& currentToken) {
     std::string stmt;
     skipWhitespace(lexer, currentToken);
 
-    // 支持 if/while 块整体读取（跨行，直到遇到 '}' 或 EOF）
     if (currentToken.type == TOKEN_IF || currentToken.type == TOKEN_WHILE || currentToken.type == TOKEN_FOR) {
         int braceDepth = 0;
         bool insideBlock = false;
@@ -315,14 +324,12 @@ std::string Parser::parseSingleStatement(Lexer& lexer, Token& currentToken) {
     return stmt;
 }
 
-// 解析函数定义
 void Parser::parseFunction() {
     eat(funcLexer, funcCurrentToken, TOKEN_FUNC);
     std::string funcName = funcCurrentToken.value;
     eat(funcLexer, funcCurrentToken, TOKEN_IDENTIFIER);
     eat(funcLexer, funcCurrentToken, TOKEN_LPAREN);
 
-    // 解析参数列表
     std::vector<Parameter> params;
     while (funcCurrentToken.type != TOKEN_RPAREN && funcCurrentToken.type != TOKEN_EOF) {
         if (funcCurrentToken.type == TOKEN_NEWLINE || funcCurrentToken.value.empty()) {
@@ -331,17 +338,14 @@ void Parser::parseFunction() {
             continue;
         }
 
-        // 参数名
         std::string paramName = funcCurrentToken.value;
         eat(funcLexer, funcCurrentToken, TOKEN_IDENTIFIER);
 
-        // 期望 <-
         if (funcCurrentToken.type != TOKEN_LEFT_ARROW) {
             throw std::runtime_error(makeParseError(funcCurrentToken, "Parameter definition expected '<-', got: " + funcCurrentToken.value));
         }
         eat(funcLexer, funcCurrentToken, TOKEN_LEFT_ARROW);
 
-        // 参数类型
         std::string paramType;
         if (funcCurrentToken.type == TOKEN_INT) {
             paramType = "int";
@@ -361,7 +365,6 @@ void Parser::parseFunction() {
 
         params.push_back({ paramName, paramType });
 
-        // 处理逗号分隔
         if (funcCurrentToken.type == TOKEN_COMMA) {
             eat(funcLexer, funcCurrentToken, TOKEN_COMMA);
             skipWhitespace(funcLexer, funcCurrentToken);
@@ -369,7 +372,6 @@ void Parser::parseFunction() {
     }
 
     eat(funcLexer, funcCurrentToken, TOKEN_RPAREN);
-    // 返回类型（可省略，默认为 void）
     std::string returnType = "void";
     if (funcCurrentToken.type == TOKEN_ARROW) {
         eat(funcLexer, funcCurrentToken, TOKEN_ARROW);
@@ -411,18 +413,12 @@ void Parser::parseFunction() {
         std::string stmt = parseSingleStatement(funcLexer, funcCurrentToken);
         if (!stmt.empty()) {
             func.body.push_back(stmt);
-            if (isOutInfo) {
-                std::cout << "[解析] 函数体语句：" << stmt << std::endl;
-            }
         }
         skipWhitespace(funcLexer, funcCurrentToken);
     }
 
     eat(funcLexer, funcCurrentToken, TOKEN_RBRACE);
     tempFunctions.push_back(func);
-    if (isOutInfo) {
-        std::cout << "[解析] 完成函数：" << func.name << "，共" << func.body.size() << "条语句" << std::endl;
-    }
 }
 
 Parser::Parser(const std::string& src, std::unordered_map<std::string, Value>& vars,
@@ -669,6 +665,10 @@ namespace {
         }
         void onAssign(const std::string& name, std::unique_ptr<Expr> expr) override {
             variables[name] = expr->evaluate(variables, functions);
+            if (variables[name].getType() == Value::Type::Bytes) {
+                int sz = static_cast<int>(variables[name].asBytes().size());
+                Parser::checkNewAllocBytes(sz);
+            }
         }
         void onIndexAssign(const std::string& name, std::unique_ptr<Expr> index, std::unique_ptr<Expr> value) override {
             Value idxVal = index->evaluate(variables, functions);
@@ -729,11 +729,10 @@ void Parser::parseInputStatement(Lexer& lexer, Token& currentToken,
     variables[varName] = inputExpr.evaluate(variables, functions);
 
     if (isOutInfo) {
-        std::cout << "[执行] 输入赋值：" << varName << " = \"" << variables[varName].asString() << "\"" << std::endl;
+        std::cout << "[鎵ц] 杈撳叆璧嬪�硷細" << varName << " = \"" << variables[varName].asString() << "\"" << std::endl;
     }
 }
 
-// 将比较操作的两侧表达式由 parsePrimary 改为 parseAdd，以支持 a + b 比较写法
 std::unique_ptr<Expr> Parser::parseCompare(Lexer& lexer, Token& currentToken) {
     auto left = parseAdd(lexer, currentToken);
     while (currentToken.type == TOKEN_EQ || currentToken.type == TOKEN_NE ||
@@ -783,9 +782,6 @@ IfStatement Parser::parseIfStatement(Lexer& lexer, Token& currentToken) {
         std::string stmt = parseSingleStatement(lexer, currentToken);
         if (!stmt.empty()) {
             ifStmt.body.push_back(stmt);
-            if (isOutInfo) {
-                std::cout << "[解析] if块内语句：" << stmt << std::endl;
-            }
         }
         skipWhitespace(lexer, currentToken);
     }
@@ -803,14 +799,8 @@ Value Parser::executeIfStatement(const IfStatement& ifStmt,
     auto condExpr = parseExpr(condLexer, condToken);
     Value condResult = condExpr->evaluate(variables, functions);
     bool isTrue = condResult.asBool();
-    if (isOutInfo) {
-        std::cout << "[执行] if条件：" << ifStmt.condition << " → " << (isTrue ? "真" : "假") << std::endl;
-    }
     if (isTrue) {
         for (const auto& stmt : ifStmt.body) {
-            if (isOutInfo) {
-                std::cout << "[执行] if块内执行：" << stmt << std::endl;
-            }
             Value val = parseLine(stmt, variables, functions);
             if (val.getType() != Value::Type::Void) {
                 return val;
@@ -820,7 +810,6 @@ Value Parser::executeIfStatement(const IfStatement& ifStmt,
     return Value();
 }
 
-// 解析 while 语句（结构与 if 相同）
 WhileStatement Parser::parseWhileStatement(Lexer& lexer, Token& currentToken) {
     WhileStatement whileStmt;
     skipWhitespace(lexer, currentToken);
@@ -846,9 +835,6 @@ WhileStatement Parser::parseWhileStatement(Lexer& lexer, Token& currentToken) {
         std::string stmt = parseSingleStatement(lexer, currentToken);
         if (!stmt.empty()) {
             whileStmt.body.push_back(stmt);
-            if (isOutInfo) {
-                std::cout << "[解析] while块内语句：" << stmt << std::endl;
-            }
         }
         skipWhitespace(lexer, currentToken);
     }
@@ -856,7 +842,6 @@ WhileStatement Parser::parseWhileStatement(Lexer& lexer, Token& currentToken) {
     return whileStmt;
 }
 
-// 执行 while 语句
 Value Parser::executeWhileStatement(const WhileStatement& whileStmt,
     std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
@@ -867,27 +852,17 @@ Value Parser::executeWhileStatement(const WhileStatement& whileStmt,
     auto condExpr = parseExpr(condLexer, condToken);
     Value condResult = condExpr->evaluate(variables, functions);
     while (condResult.asBool()) {
-        if (isOutInfo) {
-            std::cout << "[执行] while条件：" << whileStmt.condition << " → 真，进入循环" << std::endl;
-        }
         for (const auto& stmt : whileStmt.body) {
-            if (isOutInfo) {
-                std::cout << "[执行] while块内执行：" << stmt << std::endl;
-            }
             Value val = parseLine(stmt, variables, functions);
             if (val.getType() != Value::Type::Void) {
                 return val;
             }
         }
-        // 重新计算条件
         condLexer = Lexer(whileStmt.condition);
         condToken = condLexer.nextToken();
         skipWhitespace(condLexer, condToken);
         condExpr = parseExpr(condLexer, condToken);
         condResult = condExpr->evaluate(variables, functions);
-    }
-    if (isOutInfo) {
-        std::cout << "[执行] while条件：" << whileStmt.condition << " → 假，退出循环" << std::endl;
     }
     return Value();
 }
@@ -941,9 +916,6 @@ ForStatement Parser::parseForStatement(Lexer& lexer, Token& currentToken) {
         std::string stmt = parseSingleStatement(lexer, currentToken);
         if (!stmt.empty()) {
             forStmt.body.push_back(stmt);
-            if (isOutInfo) {
-                std::cout << "[解析] for块内语句：" << stmt << std::endl;
-            }
         }
         skipWhitespace(lexer, currentToken);
     }
@@ -969,13 +941,8 @@ Value Parser::executeForStatement(const ForStatement& forStmt,
         else {
             break;
         }
-        if (isOutInfo) {
-            std::cout << "[执行] for循环执行一次" << std::endl;
-        }
+
         for (const auto& stmt : forStmt.body) {
-            if (isOutInfo) {
-                std::cout << "[执行] for块内执行：" << stmt << std::endl;
-            }
             Value val = parseLine(stmt, variables, functions);
             if (val.getType() != Value::Type::Void) {
                 return val;
@@ -994,11 +961,9 @@ void Parser::parseImportStatement(Lexer& lexer, Token& currentToken,
     skipWhitespace(lexer, currentToken);
     eat(lexer, currentToken, TOKEN_IMPORT);
 
-    // 获取库名
     std::string libName = currentToken.value;
     eat(lexer, currentToken, TOKEN_IDENTIFIER);
 
-    // 可选别名：import math -> m
     std::string alias;
     if (currentToken.type == TOKEN_ARROW) {
         eat(lexer, currentToken, TOKEN_ARROW);
@@ -1010,30 +975,16 @@ void Parser::parseImportStatement(Lexer& lexer, Token& currentToken,
         eat(lexer, currentToken, TOKEN_IDENTIFIER);
     }
 
-    // 检查库是否存在并加载
     auto& libMgr = LibraryManager::getInstance();
 
-    // 解析外部调用路径 → 内部库名（如 "fox.sys.io.fs" → "file"）
     std::string internalName = libMgr.resolveExternalPath(libName);
 
-    // 先检查原始名字（如果是外部路径，会被 isSystemLibrary 识别）
     if (libMgr.isSystemLibrary(libName)) {
-        if (isOutInfo) {
-            std::cout << "[导入] " << libName;
-            if (!alias.empty()) std::cout << " -> " << alias;
-            std::cout << std::endl;
-        }
+
     }
     else if (libMgr.isLibraryAvailable(internalName)) {
         try {
             libMgr.loadExternalLibrary(internalName);
-            if (isOutInfo) {
-                std::cout << "[导入] ";
-                if (libName != internalName) std::cout << libName << " (" << internalName << ")";
-                else std::cout << libName;
-                if (!alias.empty()) std::cout << " -> " << alias;
-                std::cout << std::endl;
-            }
         }
         catch (const std::exception& e) {
             throw std::runtime_error("Failed to import library " + libName + ": " + e.what());
@@ -1043,8 +994,6 @@ void Parser::parseImportStatement(Lexer& lexer, Token& currentToken,
         throw std::runtime_error(makeParseError(currentToken, "Library not found: " + libName + ", please ensure the library file exists in C:\\FoxLibs\\ directory"));
     }
 
-    // 用 import 时写的名字作为调用名前缀
-    // 外部路径（如 fox.sys.io.fs）自动取最后一段（fs），别名优先
     std::string callName;
     if (!alias.empty()) {
         callName = alias;

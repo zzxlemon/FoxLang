@@ -10,5 +10,5 @@ const int DOUBLE_BYTE_SIZE = 8;  // double
 const int STRING_BYTE_SIZE = 8;  // String
 const int VOID_BYTE_SIZE = 0;    // void
 
-// XOR º”√‹√‹‘ø
+// XOR encryption key
 const uint8_t FC_XOR_KEY = 0x2A;

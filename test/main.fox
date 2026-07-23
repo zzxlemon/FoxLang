@@ -4,3 +4,12 @@ func main() -> void{
 
     exit(0)
 }
+
+func fib(a <- int) -> int{
+    # 基准条件
+    if (n <= 0) ret 0;
+    if (n == 1) ret 1;
+    
+    # 递归调用
+    ret fibonacci(n - 1) + fibonacci(n - 2);
+}

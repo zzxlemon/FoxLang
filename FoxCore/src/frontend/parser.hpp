@@ -39,55 +39,72 @@ private:
     Lexer funcLexer;
     Token funcCurrentToken;
     std::vector<Function> tempFunctions;
-    // 执行语句专用的工具方法
+    
+    // 执行/解析专用的工具方法
     static void skipWhitespace(Lexer& lexer, Token& currentToken);
     static void eat(Lexer& lexer, Token& currentToken, TokenT expectedType);
-    // 解析表达式
+    
+    // 解析基础表达式
     static std::unique_ptr<Expr> parsePrimary(Lexer& lexer, Token& currentToken);
     static std::unique_ptr<Expr> parsePostfix(Lexer& lexer, Token& currentToken, std::unique_ptr<Expr> expr);
-    static std::unique_ptr<Expr> parseAdd(Lexer& lexer, Token& currentToken); // 新增：处理 +/-
+    static std::unique_ptr<Expr> parseAdd(Lexer& lexer, Token& currentToken); // 解析加减法 +/-
+    
     // 解析赋值语句
     static void parseAssignment(Lexer& lexer, Token& currentToken,
         std::unordered_map<std::string, Value>& variables,
         std::unordered_map<std::string, Function>& functions);
-    // 解析print语句
+        
+    // 解析 print 语句
     static void parsePrint(Lexer& lexer, Token& currentToken,
         std::unordered_map<std::string, Value>& variables,
         std::unordered_map<std::string, Function>& functions);
-	// 解析endl语句
+        
+    // 解析 endl 语句
     static void parseEndl(Lexer& lexer, Token& currentToken,
         std::unordered_map<std::string, Value>& variables,
-		std::unordered_map<std::string, Function>& functions);
-	// 解析exit语句
+        std::unordered_map<std::string, Function>& functions);
+        
+    // 解析 exit 语句
     static void parseExit(Lexer& lexer, Token& currentToken,
         std::unordered_map<std::string, Value>& variables,
-		std::unordered_map<std::string, Function>& functions);
-    // 解析ret返回语句
+        std::unordered_map<std::string, Function>& functions);
+        
+    // 解析 ret 返回语句
     static Value parseRet(Lexer& lexer, Token& currentToken,
         std::unordered_map<std::string, Value>& variables,
         std::unordered_map<std::string, Function>& functions);
+        
     static void parseInputStatement(Lexer& lexer, Token& currentToken,
         std::unordered_map<std::string, Value>& variables,
         std::unordered_map<std::string, Function>& functions);
 
     static std::unique_ptr<Expr> parseCastExpr(Lexer& lexer, Token& currentToken, CastType castType);
+    
     // 解析单条语句
     static std::string parseSingleStatement(Lexer& lexer, Token& currentToken);
+    
     // 解析函数定义
     void parseFunction();
+    
     // 解析比较表达式
     static std::unique_ptr<Expr> parseCompare(Lexer& lexer, Token& currentToken);
-    // 解析条件表达式
+    
+    // 解析逻辑条件表达式
     static std::unique_ptr<Expr> parseCondition(Lexer& lexer, Token& currentToken);
-    // 解析if语句
+    
+    // 解析 if 语句
     static IfStatement parseIfStatement(Lexer& lexer, Token& currentToken);
-	// 解析while语句
+    
+    // 解析 while 语句
     static WhileStatement parseWhileStatement(Lexer& lexer, Token& currentToken);
+    
     static ForStatement parseForStatement(Lexer& lexer, Token& currentToken);
-    // 解析import语句
+    
+    // 解析 import 语句
     static void parseImportStatement(Lexer& lexer, Token& currentToken,
         std::unordered_map<std::string, Value>& variables,
         std::unordered_map<std::string, Function>& functions);
+
 public:
     std::unordered_map<std::string, Value>& variables;
     std::unordered_map<std::string, Function>& functions;
@@ -95,7 +112,7 @@ public:
 
     static std::unique_ptr<Expr> parseExpr(Lexer& lexer, Token& currentToken);
 
-    // Handler-based line parsing (parsing only, no execution)
+    // 基于 Handler 的单行解析（仅解析，不执行）
     static void parseLine(const std::string& line, StmtHandler& handler);
 
     static Value executeIfStatement(const IfStatement& ifStmt,
@@ -114,4 +131,6 @@ public:
     static Value parseLine(const std::string& line,
         std::unordered_map<std::string, Value>& variables,
         std::unordered_map<std::string, Function>& functions);
+    static void resetNewAllocBytes();
+    static bool checkNewAllocBytes(int size);
 };

@@ -19,14 +19,12 @@ static FileHandle* getHandle(int h) {
     return (it != s_files.end() && it->second.isOpen) ? &it->second : nullptr;
 }
 
-// 打开文件（不存在时自动创建）
 Value File::FileOpen(const std::vector<Value>& args) {
     if (args.size() != 2)
         throw std::runtime_error("FileOpen: need 2 args (filename, mode)");
     std::string name = args[0].asString();
     std::string mode = args[1].asString();
 
-    // 检查是否已打开
     for (auto& p : s_files) {
         if (p.second.name == name && p.second.isOpen)
             throw std::runtime_error("FileOpen: file already opened, handle=" + std::to_string(p.first));
@@ -48,7 +46,6 @@ Value File::FileOpen(const std::vector<Value>& args) {
     return Value(handle);
 }
 
-// 读取整个文件 大文件一次性读入内存，谨慎使用
 Value File::FileRead(const std::vector<Value>& args) {
     if (args.size() != 1)
         throw std::runtime_error("FileRead: need 1 arg (handle)");
@@ -69,7 +66,6 @@ Value File::FileRead(const std::vector<Value>& args) {
     return Value(oss.str());
 }
 
-// 写入内容 二进制模式下换行符为 LF，文本模式暂不支持
 Value File::FileWrite(const std::vector<Value>& args) {
     if (args.size() < 2 || args.size() > 3)
         throw std::runtime_error("FileWrite: need 2 or 3 args (handle, content, newline(true/false))");
@@ -92,7 +88,6 @@ Value File::FileWrite(const std::vector<Value>& args) {
     return Value();
 }
 
-// 关闭文件（从表中删除，释放资源）
 Value File::FileClose(const std::vector<Value>& args) {
     if (args.size() != 1)
         throw std::runtime_error("FileClose: need 1 arg (handle)");
@@ -105,7 +100,6 @@ Value File::FileClose(const std::vector<Value>& args) {
     return Value();
 }
 
-// 删除文件
 Value File::FileDelete(const std::vector<Value>& args) {
     if (args.size() != 1)
         throw std::runtime_error("FileDelete: need 1 arg (filename)");
@@ -121,5 +115,3 @@ Value File::FileDelete(const std::vector<Value>& args) {
         throw std::runtime_error("FileDelete: cannot delete file " + name);
     return Value();
 }
-
-// 整个文件操作库非线程安全，多线程调用需外部同步

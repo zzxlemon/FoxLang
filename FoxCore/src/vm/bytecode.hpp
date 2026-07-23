@@ -63,6 +63,7 @@ enum class OpCode : uint8_t {
     OP_ENDLN           = 0x25,
     OP_EXIT            = 0x26,
     OP_IMPORT          = 0x27,
+    OP_NEW             = 0x28,
     OP_HALT            = 0xFF,
 };
 

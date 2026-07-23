@@ -65,14 +65,12 @@ CallExpr::CallExpr(const std::string& name, std::vector<std::unique_ptr<Expr>>&&
 }
 Value CallExpr::evaluate(std::unordered_map<std::string, Value>& variables,
     std::unordered_map<std::string, Function>& functions) {
-    // 先计算参数值
     std::vector<Value> argVals;
     argVals.reserve(args.size());
     for (const auto& a : args) {
         argVals.push_back(a->evaluate(variables, functions));
     }
 
-    // 如果是系统函数表中登记的函数名，调用 SystemFunctionBuildIn
     Interpreter sys;
     if (sys.isSystemFunction(funcName)) {
         return sys.SystemFunctionBuildIn(funcName, argVals);
@@ -89,7 +87,6 @@ Value CallExpr::evaluate(std::unordered_map<std::string, Value>& variables,
     }
     */
 
-    // 否则按原有流程查找脚本函数
     if (functions.find(funcName) == functions.end()) {
         auto& libMgr = LibraryManager::getInstance();
         std::string libName = libMgr.getBlockedLibName(funcName);
@@ -112,14 +109,12 @@ Value CallExpr::evaluate(std::unordered_map<std::string, Value>& variables,
 
     const Function& func = functions[funcName];
 
-    // 检查参数数量
     if (argVals.size() != func.parameters.size()) {
         throw std::runtime_error("Function " + funcName + " expects " +
             std::to_string(func.parameters.size()) + " arguments, got " +
             std::to_string(argVals.size()));
     }
 
-    // 创建局部作用域并绑定参数
     Interpreter funcInterp;
     funcInterp.variables = variables;
     funcInterp.functions = functions;
@@ -170,6 +165,17 @@ Value InputExpr::evaluate(std::unordered_map<std::string, Value>& variables,
     std::string userInput;
     std::getline(std::cin, userInput);
     return Value(userInput);
+}
+
+Value NewExpr::evaluate(std::unordered_map<std::string, Value>& variables,
+    std::unordered_map<std::string, Function>& functions) {
+    Value sizeVal = sizeExpr->evaluate(variables, functions);
+    int size = sizeVal.asInt();
+    if (size < 0) {
+        throw std::runtime_error("new() size must be non-negative");
+    }
+    std::vector<uint8_t> bytes(size, 0);
+    return Value(bytes);
 }
 
 Value CastExpr::evaluate(std::unordered_map<std::string, Value>& variables,

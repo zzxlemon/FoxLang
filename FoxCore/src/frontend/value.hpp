@@ -5,7 +5,7 @@
 
 class Value {
 public:
-    enum class Type { Int, String, Double, Void, Array, Unknown };
+    enum class Type { Int, String, Double, Void, Array, Bytes, Unknown };
 
     Value();
     Value(int v);
@@ -13,6 +13,7 @@ public:
     Value(const std::string& v);
     Value(const char* v);
     Value(const std::vector<Value>& v);
+    Value(const std::vector<uint8_t>& bytes);
 
     Type getType() const;
 
@@ -22,7 +23,9 @@ public:
     double asDouble() const;
     const std::string& asString() const;
     const std::vector<Value>& asArray() const;
-    // 获取类型字节大小
+    const std::vector<uint8_t>& asBytes() const;
+    std::vector<uint8_t>& asBytesRef();
+    
     int getByteSize() const;
 
     bool asBool() const {
@@ -30,7 +33,8 @@ public:
         case Type::Int: return intVal != 0;
         case Type::Double: return doubleVal != 0.0;
         case Type::Array: return !arrVal.empty();
-        default: throw std::runtime_error("Only int/double/array types supported as condition");
+        case Type::Bytes: return !bytesVal.empty();
+        default: throw std::runtime_error("Only int/double/array/bytes types supported as condition");
         }
     }
 
@@ -40,4 +44,5 @@ private:
     double doubleVal;
     std::string strVal;
     std::vector<Value> arrVal;
+    std::vector<uint8_t> bytesVal;
 };

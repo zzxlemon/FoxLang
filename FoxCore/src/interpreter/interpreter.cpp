@@ -15,13 +15,6 @@ void Interpreter::parseCode(const std::string& code, const std::string& filename
     try {
         Parser parser(code, variables, functions);
         parser.parseAllFunctions();
-        if (isOutInfo) {
-            std::cout << "\n===== 解析完成的函数列表 =====" << std::endl;
-            for (const auto& pair : functions) {
-                const auto& func = pair.second;
-                std::cout << "函数名：" << func.name << " 返回类型：" << func.returnType << " 语句数：" << func.body.size() << std::endl;
-            }
-        }
     }
     catch (const std::exception& e) {
         parse_failed = true;
@@ -36,9 +29,7 @@ Value Interpreter::execute(const std::string& line) {
 
 Value Interpreter::executeFunction(const Function& func) {
     Value returnValue;
-    if (isOutInfo) {
-        std::cout << "\n===== 执行函数：" << func.name << " =====" << std::endl;
-    }
+    Parser::resetNewAllocBytes();
 
     // Pre-scan labels for goto
     std::unordered_map<std::string, size_t> labels;
@@ -58,9 +49,6 @@ Value Interpreter::executeFunction(const Function& func) {
     while (i < func.body.size()) {
         try {
             const auto& stmt = func.body[i];
-            if (isOutInfo) {
-                std::cout << "[执行] 语句：" << stmt << std::endl;
-            }
 
             if (stmt.rfind("fn ", 0) == 0) {
                 i++;

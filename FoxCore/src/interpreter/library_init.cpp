@@ -10,7 +10,6 @@
 void initSystemLibraries() {
     auto& libMgr = LibraryManager::getInstance();
 
-    // 注册 random 库
     libMgr.registerLibrary("random");
     libMgr.registerLibraryName("random", "fox.std.random");
     libMgr.registerSystemFunction("random", "random", [](const std::vector<Value>& args) -> Value {
@@ -18,7 +17,6 @@ void initSystemLibraries() {
         return random.RandomStart(args);
         });
 
-    // 注册 file 库（外部调用路径: fox.sys.io.fs）
     libMgr.registerLibrary("file");
     libMgr.registerLibraryName("file", "fox.sys.io.fs");
     libMgr.registerSystemFunction("file", "file_open", [](const std::vector<Value>& args) -> Value {
@@ -111,8 +109,4 @@ void initSystemLibraries() {
         Socket sock;
         return sock.socket_close(args);
         });
-    
-    if (isOutInfo) {
-        std::cout << "[系统] 系统库初始化完成" << std::endl;
-    }
 }

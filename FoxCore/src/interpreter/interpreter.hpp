@@ -13,6 +13,7 @@ public:
     std::unordered_map<std::string, Value> variables;
     std::unordered_map<std::string, Function> functions;
     bool parse_failed = false;
+    int funcNewBytes = 0;
 
     void parseCode(const std::string& code, const std::string& filename = "");
     Value execute(const std::string& line);

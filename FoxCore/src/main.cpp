@@ -211,7 +211,7 @@ int main(int argc, char** argv) {
         }
         else if (in == "-help" || in == "-h") {
             std::cout << "FoxLang Interpreter - Usage:" << std::endl;
-            std::cout << "  -f <file>               Run FoxLang source file" << std::endl;
+            std::cout << "  -f <file>               Run FoxLang source file.(Deprecated)" << std::endl;
             std::cout << "  -c <file>               Compile .fox -> .fc bytecode" << std::endl;
             std::cout << "  -fc <file>              Run .fc bytecode file" << std::endl;
             std::cout << "  -p <out.far> <files>    Package files into .far archive" << std::endl;
@@ -241,7 +241,7 @@ int main(int argc, char** argv) {
     if (!filename.empty()) {
         std::string fullCode = read_file(filename);
         ErrorReporter::setSource(filename, fullCode);
-        RegFunc(); // 初始化系统库，以便 import 能正确识别
+        RegFunc(); 
         interpreter.parseCode(fullCode, filename);
         if (!interpreter.parse_failed) {
             interpreter.runMainFunc();

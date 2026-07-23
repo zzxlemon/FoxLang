@@ -137,6 +137,13 @@ std::vector<uint8_t> Chunk::serialize() const {
             data.push_back(4);
             break;
         }
+        case Value::Type::Bytes: {
+            data.push_back(5);
+            const auto& bv = v.asBytes();
+            write32(static_cast<uint32_t>(bv.size()));
+            for (uint8_t byte : bv) data.push_back(byte);
+            break;
+        }
     }
 }
 
@@ -200,10 +207,17 @@ bool Chunk::deserialize(const std::vector<uint8_t>& data) {
             uint32_t arrLen = read32();
             std::vector<Value> arr;
             for (uint32_t j = 0; j < arrLen; j++) {
-                // nested array elements not fully supported in serialization
                 arr.push_back(Value());
             }
             constants.push_back(Value(arr));
+            break;
+        }
+        case 5: { // bytes
+            uint32_t bytesLen = read32();
+            if (offset + bytesLen > data.size()) return false;
+            std::vector<uint8_t> bv(data.begin() + offset, data.begin() + offset + bytesLen);
+            offset += bytesLen;
+            constants.push_back(Value(bv));
             break;
         }
         default: // nil/void
@@ -359,6 +373,11 @@ static CompiledProgram deserializeRaw(const uint8_t* data, size_t size) {
             case 3: {
                 uint32_t alen = read32();
                 offset += alen * 4;
+                break;
+            }
+            case 5: {
+                uint32_t blen = read32();
+                offset += blen;
                 break;
             }
             default: break;
@@ -890,6 +909,11 @@ Value::Type BytecodeCompiler::compileExpr(CompiledFunction& cf, Expr* expr) {
             cf.chunk.patchJump(endJump + 1, cf.chunk.code.size());
         }
         return Value::Type::Int;
+    }
+    if (auto* newExpr = dynamic_cast<NewExpr*>(expr)) {
+        compileExpr(cf, newExpr->sizeExpr.get());
+        cf.chunk.writeOp(OpCode::OP_NEW, 0);
+        return Value::Type::Bytes;
     }
     throw std::runtime_error(std::string("BytecodeCompiler: unsupported expression type: ") + typeid(*expr).name());
 }
@@ -1527,6 +1551,17 @@ void VM::run() {
         }
         case OpCode::OP_IMPORT: {
             // Import is handled by the compiler stage, skip at runtime
+            break;
+        }
+        case OpCode::OP_NEW: {
+            Value sizeVal = pop();
+            int size = sizeVal.asInt();
+            if (size < 0) {
+                runtimeErr("new() size must be non-negative");
+                break;
+            }
+            std::vector<uint8_t> bytes(size, 0);
+            push(Value(bytes));
             break;
         }
         case OpCode::OP_HALT: {
