@@ -1,4 +1,10 @@
-func main() {
-    a = random("int", 0, 100)
+import fox.std.random -> r
+
+func main() -> void{
+    a = r.random("int", 0, 100)
     print(a)
+
+    ret 0
 }
+
+
