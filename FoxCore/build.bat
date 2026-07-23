@@ -33,7 +33,7 @@ for /r %%f in (*.cpp) do (
     echo -^> Compiling: %%~nxf ...
     
     :: Use UTF-8 for compilation
-    g++ -c "%%f" %include_paths% -o "builds\%%~nxf.o" -finput-charset=UTF-8 -fexec-charset=UTF-8
+    g++ -c "%%f" %include_paths% -I ./native/glfw/include -o "builds\%%~nxf.o" -finput-charset=UTF-8 -fexec-charset=UTF-8
     
     if !errorlevel! neq 0 (
         echo -----------------------------------
@@ -50,7 +50,7 @@ if "%has_cpp%"=="0" (
 
 echo -----------------------------------
 echo [2/2] Linking and generating executable...
-g++ %obj_files% -o build/fox.exe -lws2_32
+g++ %obj_files% -L ./native/glfw/lib -lws2_32 -lglfw3 -lopengl32 -lgdi32 -luser32 -lkernel32 -o build/fox.exe
 
 if %errorlevel% equ 0 (
     echo -----------------------------------
